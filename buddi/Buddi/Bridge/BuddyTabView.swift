@@ -57,21 +57,10 @@ struct BuddyTabView: View {
                     .foregroundColor(Color(nsColor: BuddyManager.shared.effectiveIdentity.rarity.nsColor).opacity(0.8))
 
                 if usageService.isAvailable {
-                    if let fh = usageService.usage.fiveHour {
-                        UsageBar(
-                            label: "Session",
-                            percent: fh.utilization / 100,
-                            detail: "\(Int(fh.utilization))%",
-                            color: fh.utilization > 80 ? .red : fh.utilization > 60 ? .yellow : Color(red: 0.35, green: 0.55, blue: 1.0)
-                        )
-                    }
-                    if let sd = usageService.usage.sevenDay {
-                        UsageBar(
-                            label: "Weekly",
-                            percent: sd.utilization / 100,
-                            detail: "\(Int(sd.utilization))%",
-                            color: sd.utilization > 80 ? .red : sd.utilization > 60 ? .yellow : Color(red: 0.35, green: 0.55, blue: 1.0)
-                        )
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        VStack(spacing: 3) {
+                            usageBars(now: context.date)
+                        }
                     }
                 }
             }
@@ -92,6 +81,26 @@ struct BuddyTabView: View {
         }
     }
 
+    @ViewBuilder
+    private func usageBars(now: Date) -> some View {
+        if let fh = usageService.usage.fiveHour {
+            UsageBar(
+                label: "Session",
+                percent: fh.utilization / 100,
+                detail: fh.resetsAt.map { "\(Int(fh.utilization))% · \(formatResetTime($0, now: now))" } ?? "\(Int(fh.utilization))%",
+                color: fh.utilization > 80 ? .red : fh.utilization > 60 ? .yellow : Color(red: 0.35, green: 0.55, blue: 1.0)
+            )
+        }
+        if let sd = usageService.usage.sevenDay {
+            UsageBar(
+                label: "Weekly",
+                percent: sd.utilization / 100,
+                detail: sd.resetsAt.map { "\(Int(sd.utilization))% · \(formatResetTime($0, now: now))" } ?? "\(Int(sd.utilization))%",
+                color: sd.utilization > 80 ? .red : sd.utilization > 60 ? .yellow : Color(red: 0.35, green: 0.55, blue: 1.0)
+            )
+        }
+    }
+
     private var sessions: [SessionState] { bridge.sessionMonitor.instances }
 
     private static let dayTimeFormatter: DateFormatter = {
@@ -100,8 +109,8 @@ struct BuddyTabView: View {
         return f
     }()
 
-    private func formatResetTime(_ date: Date) -> String {
-        let remaining = date.timeIntervalSinceNow
+    private func formatResetTime(_ date: Date, now: Date = Date()) -> String {
+        let remaining = date.timeIntervalSince(now)
         if remaining <= 0 { return "now" }
         let hours = Int(remaining) / 3600
         let minutes = (Int(remaining) % 3600) / 60

@@ -61,7 +61,7 @@ struct BuddyTabView: View {
                         UsageBar(
                             label: "Session",
                             percent: fh.utilization / 100,
-                            detail: "\(Int(fh.utilization))%",
+                            detail: fh.resetsAt.map { "\(Int(fh.utilization))% · \(formatResetTime($0))" } ?? "\(Int(fh.utilization))%",
                             color: fh.utilization > 80 ? .red : fh.utilization > 60 ? .yellow : Color(red: 0.35, green: 0.55, blue: 1.0)
                         )
                     }
@@ -69,7 +69,7 @@ struct BuddyTabView: View {
                         UsageBar(
                             label: "Weekly",
                             percent: sd.utilization / 100,
-                            detail: "\(Int(sd.utilization))%",
+                            detail: sd.resetsAt.map { "\(Int(sd.utilization))% · \(formatResetTime($0))" } ?? "\(Int(sd.utilization))%",
                             color: sd.utilization > 80 ? .red : sd.utilization > 60 ? .yellow : Color(red: 0.35, green: 0.55, blue: 1.0)
                         )
                     }

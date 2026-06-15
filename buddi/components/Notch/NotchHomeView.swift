@@ -441,6 +441,22 @@ struct NotchHomeView: View {
     private var mainContent: some View {
         HStack(alignment: .top, spacing: (shouldShowCamera && Defaults[.showCalendar]) ? 10 : 15) {
             MusicPlayerView(albumArtNamespace: albumArtNamespace)
+                .onHover { hovering in
+                    vm.isHoveringMusicPlayer = hovering
+                }
+                .conditionalModifier(Defaults[.enableGestures]) { view in
+                    view
+                        // Two-finger swipe left over the player → next track.
+                        .panGesture(direction: .left, threshold: 12) { _, phase in
+                            guard phase == .began, vm.isHoveringMusicPlayer else { return }
+                            MusicManager.shared.nextTrack()
+                        }
+                        // Two-finger swipe right over the player → previous track.
+                        .panGesture(direction: .right, threshold: 12) { _, phase in
+                            guard phase == .began, vm.isHoveringMusicPlayer else { return }
+                            MusicManager.shared.previousTrack()
+                        }
+                }
 
             if Defaults[.showCalendar] {
                 CalendarView()

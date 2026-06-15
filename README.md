@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>Buddi</h1>
+  <h1>Buddi Ultra</h1>
   <p>A macOS notch companion for <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code</a>.</p>
 </div>
 
@@ -8,6 +8,8 @@
 </div>
 
 Anthropic removed /buddy from Claude Code in v2.1.97. Buddi gives your buddy a permanent home in the MacBook notch.
+
+> **Buddi Ultra** is a personal fork of [Buddi](https://github.com/talkvalue/Buddi) by TalkValue. It adds two-finger trackpad swipe navigation in the open notch: swipe over the now-playing player to skip tracks, and swipe elsewhere to move between the Buddy / Dashboard / Shelf tabs. All credit for the original app belongs to TalkValue and the upstream projects listed in [Acknowledgements](#acknowledgements).
 
 ---
 
@@ -70,8 +72,9 @@ Buddi registers hooks with Claude Code on launch. When Claude Code emits events 
 
 ## Acknowledgements
 
-Buddi is built on top of open-source work by others:
+Buddi Ultra is built on top of open-source work by others:
 
+- **[Buddi](https://github.com/talkvalue/Buddi)** by TalkValue — The direct upstream this project is forked from. Everything except the two-finger swipe navigation comes from Buddi.
 - **[boring.notch](https://github.com/TheBoredTeam/boring.notch)** by TheBoredTeam — The notch UI framework that Buddi is built upon. Music player, calendar, battery, HUD replacement, file shelf, and the core notch rendering system all come from boring.notch.
 - **[Claude Island](https://github.com/farouqaldori/claude-island)** by farouqaldori — The predecessor to Buddi. Claude Code session monitoring, hook system, buddy characters, and the chat interface originate from Claude Island.
 

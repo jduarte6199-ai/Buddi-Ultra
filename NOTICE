@@ -1,5 +1,10 @@
-Buddi - Claude Code Companion for macOS Notch
+Buddi Ultra - Claude Code Companion for macOS Notch
 Copyright (C) 2026 TalkValue
+
+Buddi Ultra is a fork of Buddi:
+https://github.com/talkvalue/Buddi
+Two-finger swipe navigation and related modifications:
+Copyright (C) 2026 Jose Duarte
 
 This program is based on boring.notch:
 Copyright (C) 2024 TheBoredTeam

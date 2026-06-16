@@ -21,7 +21,7 @@ struct NotchMenuView: View {
     @ObservedObject private var soundSelector = SoundSelector.shared
     @State private var hooksInstalled: Bool = false
     @State private var launchAtLogin: Bool = false
-    @Default(.showUsage) private var showUsage
+    @Default(.showUsagePercent) private var showUsagePercent
 
     var body: some View {
         VStack(spacing: 4) {
@@ -79,11 +79,11 @@ struct NotchMenuView: View {
             }
 
             MenuToggleRow(
-                icon: "chart.bar",
-                label: "Usage Bars",
-                isOn: showUsage
+                icon: "percent",
+                label: "Usage %",
+                isOn: showUsagePercent
             ) {
-                showUsage.toggle()
+                showUsagePercent.toggle()
             }
 
             AccessibilityRow(isEnabled: AXIsProcessTrusted())

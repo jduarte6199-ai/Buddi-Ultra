@@ -116,13 +116,13 @@ struct ClaudeCodeSettings: View {
             }
 
             Section {
-                Defaults.Toggle(key: .showUsage) {
-                    Text("Show usage bars")
+                Defaults.Toggle(key: .showUsagePercent) {
+                    Text("Show usage percentage")
                 }
             } header: {
                 Text("Usage")
             } footer: {
-                Text("Show the 5-hour and weekly Claude usage bars on the buddy panel. Turn off to hide them.")
+                Text("Show the percent number on the usage bars. Turn off to keep the bars but hide the % text.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

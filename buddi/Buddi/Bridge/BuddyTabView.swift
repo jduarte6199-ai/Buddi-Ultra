@@ -6,7 +6,7 @@ struct BuddyTabView: View {
     @ObservedObject private var bridge = BuddiSessionBridge.shared
     @ObservedObject private var panelVM = BuddiSessionBridge.shared.panelViewModel
     @ObservedObject private var usageService = UsageService.shared
-    @Default(.showUsage) private var showUsage
+    @Default(.showUsagePercent) private var showUsagePercent
     @State private var suppressionToken = UUID()
     @State private var isSuppressing = false
 
@@ -58,7 +58,7 @@ struct BuddyTabView: View {
                     .font(.caption2.weight(.medium).monospaced())
                     .foregroundColor(Color(nsColor: BuddyManager.shared.effectiveIdentity.rarity.nsColor).opacity(0.8))
 
-                if usageService.isAvailable && showUsage {
+                if usageService.isAvailable {
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         VStack(spacing: 3) {
                             usageBars(now: context.date)
@@ -89,7 +89,7 @@ struct BuddyTabView: View {
             UsageBar(
                 label: "Session",
                 percent: fh.utilization / 100,
-                detail: fh.resetsAt.map { "\(Int(fh.utilization))% · \(formatResetTime($0, now: now))" } ?? "\(Int(fh.utilization))%",
+                detail: usageDetail(utilization: fh.utilization, resetsAt: fh.resetsAt, now: now),
                 color: fh.utilization > 80 ? .red : fh.utilization > 60 ? .yellow : Color(red: 0.35, green: 0.55, blue: 1.0)
             )
         }
@@ -97,9 +97,22 @@ struct BuddyTabView: View {
             UsageBar(
                 label: "Weekly",
                 percent: sd.utilization / 100,
-                detail: sd.resetsAt.map { "\(Int(sd.utilization))% · \(formatResetTime($0, now: now))" } ?? "\(Int(sd.utilization))%",
+                detail: usageDetail(utilization: sd.utilization, resetsAt: sd.resetsAt, now: now),
                 color: sd.utilization > 80 ? .red : sd.utilization > 60 ? .yellow : Color(red: 0.35, green: 0.55, blue: 1.0)
             )
+        }
+    }
+
+    /// Right-side text for a usage bar. The bar itself always renders; this controls
+    /// only the label text. When `showUsagePercent` is off, the "NN%" is dropped and
+    /// just the reset countdown remains (or nothing, if no reset time is known).
+    private func usageDetail(utilization: Double, resetsAt: Date?, now: Date) -> String {
+        let reset = resetsAt.map { formatResetTime($0, now: now) }
+        if showUsagePercent {
+            let pct = "\(Int(utilization))%"
+            return reset.map { "\(pct) · \($0)" } ?? pct
+        } else {
+            return reset ?? ""
         }
     }
 

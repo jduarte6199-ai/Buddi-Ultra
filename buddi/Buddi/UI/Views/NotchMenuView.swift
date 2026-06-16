@@ -7,6 +7,7 @@
 
 import ApplicationServices
 import Combine
+import Defaults
 import SwiftUI
 import ServiceManagement
 import Sparkle
@@ -20,6 +21,7 @@ struct NotchMenuView: View {
     @ObservedObject private var soundSelector = SoundSelector.shared
     @State private var hooksInstalled: Bool = false
     @State private var launchAtLogin: Bool = false
+    @Default(.showUsage) private var showUsage
 
     var body: some View {
         VStack(spacing: 4) {
@@ -74,6 +76,14 @@ struct NotchMenuView: View {
                     HookInstaller.installIfNeeded()
                     hooksInstalled = true
                 }
+            }
+
+            MenuToggleRow(
+                icon: "chart.bar",
+                label: "Usage Bars",
+                isOn: showUsage
+            ) {
+                showUsage.toggle()
             }
 
             AccessibilityRow(isEnabled: AXIsProcessTrusted())

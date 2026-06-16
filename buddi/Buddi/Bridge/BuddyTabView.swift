@@ -1,3 +1,4 @@
+import Defaults
 import SwiftUI
 
 struct BuddyTabView: View {
@@ -5,6 +6,7 @@ struct BuddyTabView: View {
     @ObservedObject private var bridge = BuddiSessionBridge.shared
     @ObservedObject private var panelVM = BuddiSessionBridge.shared.panelViewModel
     @ObservedObject private var usageService = UsageService.shared
+    @Default(.showUsage) private var showUsage
     @State private var suppressionToken = UUID()
     @State private var isSuppressing = false
 
@@ -56,7 +58,7 @@ struct BuddyTabView: View {
                     .font(.caption2.weight(.medium).monospaced())
                     .foregroundColor(Color(nsColor: BuddyManager.shared.effectiveIdentity.rarity.nsColor).opacity(0.8))
 
-                if usageService.isAvailable {
+                if usageService.isAvailable && showUsage {
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         VStack(spacing: 3) {
                             usageBars(now: context.date)

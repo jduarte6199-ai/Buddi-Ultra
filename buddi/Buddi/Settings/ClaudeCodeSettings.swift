@@ -116,6 +116,18 @@ struct ClaudeCodeSettings: View {
             }
 
             Section {
+                Defaults.Toggle(key: .showUsage) {
+                    Text("Show usage bars")
+                }
+            } header: {
+                Text("Usage")
+            } footer: {
+                Text("Show the 5-hour and weekly Claude usage bars on the buddy panel. Turn off to hide them.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 buddyPreview
             } header: {
                 Text("Buddy")

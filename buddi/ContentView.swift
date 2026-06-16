@@ -370,17 +370,6 @@ struct ContentView: View {
                 .zIndex(1)
                 .allowsHitTesting(vm.notchState == .open)
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
-                .conditionalModifier(Defaults[.enableGestures]) { view in
-                    view
-                        // Two-finger swipe left over the open panel → next menu tab.
-                        .panGesture(direction: .left, threshold: 28) { _, phase in
-                            handleTabSwipe(forward: true, phase: phase)
-                        }
-                        // Two-finger swipe right over the open panel → previous menu tab.
-                        .panGesture(direction: .right, threshold: 28) { _, phase in
-                            handleTabSwipe(forward: false, phase: phase)
-                        }
-                }
             }
         }
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
@@ -630,27 +619,6 @@ struct ContentView: View {
             if Defaults[.enableHaptics] {
                 haptics.toggle()
             }
-        }
-    }
-
-    /// Horizontal two-finger swipe across the open panel moves between the main menu tabs.
-    /// `forward == true` advances toward Shelf, `false` back toward Buddy. Clamped at the ends.
-    private func handleTabSwipe(forward: Bool, phase: NSEvent.Phase) {
-        guard phase == .began else { return }
-        guard vm.notchState == .open && !vm.isScrollGestureActive else { return }
-        // A swipe over the now-playing player skips tracks instead (handled there).
-        // Only relevant on the Dashboard, so a stale hover flag can't block other tabs.
-        guard !(coordinator.currentView == .home && vm.isHoveringMusicPlayer) else { return }
-        // Let the Shelf's own horizontal scroll own swipes while it is the active tab.
-        guard coordinator.currentView != .shelf else { return }
-        guard let index = tabs.firstIndex(where: { $0.view == coordinator.currentView }) else { return }
-        let target = forward ? index + 1 : index - 1
-        guard tabs.indices.contains(target) else { return }
-        withAnimation(.smooth) {
-            coordinator.currentView = tabs[target].view
-        }
-        if Defaults[.enableHaptics] {
-            haptics.toggle()
         }
     }
 }

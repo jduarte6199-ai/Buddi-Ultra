@@ -62,7 +62,7 @@ struct WelcomeView: View {
                 .padding(.top)
             }
             
-            Text("Built by TalkValue")
+            Text("Built by Joseph")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)

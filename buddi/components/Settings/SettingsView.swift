@@ -874,7 +874,7 @@ struct About: View {
                 HStack(spacing: 30) {
                     Spacer(minLength: 0)
                     Button {
-                        if let url = URL(string: "https://github.com/user/buddi-v2") {
+                        if let url = URL(string: "https://github.com/jduarte6199-ai/Buddi-Ultra") {
                             NSWorkspace.shared.open(url)
                         }
                     } label: {
@@ -893,7 +893,7 @@ struct About: View {
             }
             VStack(spacing: 0) {
                 Divider()
-                Text("Made with ❤️ by TalkValue")
+                Text("Made with ❤️ by Joseph")
                     .foregroundStyle(.secondary)
                     .padding(.top, 5)
                     .padding(.bottom, 7)

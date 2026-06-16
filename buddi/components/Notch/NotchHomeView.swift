@@ -441,18 +441,10 @@ struct NotchHomeView: View {
     private var mainContent: some View {
         HStack(alignment: .top, spacing: (shouldShowCamera && Defaults[.showCalendar]) ? 10 : 15) {
             MusicPlayerView(albumArtNamespace: albumArtNamespace)
-                .conditionalModifier(Defaults[.enableGestures]) { view in
-                    view
-                        // Two-finger swipe left on the open Dashboard → next track.
-                        .panGesture(direction: .left, threshold: 12) { _, phase in
-                            guard phase == .began else { return }
-                            MusicManager.shared.nextTrack()
-                        }
-                        // Two-finger swipe right on the open Dashboard → previous track.
-                        .panGesture(direction: .right, threshold: 12) { _, phase in
-                            guard phase == .began else { return }
-                            MusicManager.shared.previousTrack()
-                        }
+                // Marks the music box so a two-finger swipe over it skips tracks
+                // instead of switching tabs (handled centrally in ContentView).
+                .onHover { hovering in
+                    vm.isHoveringMusicPlayer = hovering
                 }
 
             if Defaults[.showCalendar] {

@@ -370,6 +370,17 @@ struct ContentView: View {
                 .zIndex(1)
                 .allowsHitTesting(vm.notchState == .open)
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
+                .conditionalModifier(Defaults[.enableGestures]) { view in
+                    view
+                        // One horizontal swipe handler: over the music box it skips
+                        // tracks, anywhere else it moves between tabs (pet ↔ music).
+                        .panGesture(direction: .left, threshold: 20) { _, phase in
+                            handleHorizontalSwipe(forward: true, phase: phase)
+                        }
+                        .panGesture(direction: .right, threshold: 20) { _, phase in
+                            handleHorizontalSwipe(forward: false, phase: phase)
+                        }
+                }
             }
         }
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
@@ -619,6 +630,36 @@ struct ContentView: View {
             if Defaults[.enableHaptics] {
                 haptics.toggle()
             }
+        }
+    }
+
+    /// Single horizontal two-finger swipe handler for the open panel.
+    /// Over the music box it skips tracks; anywhere else it moves between tabs.
+    /// `forward == true` = swipe left (next track / next tab), `false` = swipe right.
+    private func handleHorizontalSwipe(forward: Bool, phase: NSEvent.Phase) {
+        guard phase == .began, vm.notchState == .open else { return }
+
+        // Over the now-playing box on the Dashboard → control playback, never tabs.
+        if coordinator.currentView == .home && vm.isHoveringMusicPlayer {
+            if forward {
+                MusicManager.shared.nextTrack()
+            } else {
+                MusicManager.shared.previousTrack()
+            }
+            return
+        }
+
+        // Otherwise move between tabs (pet ↔ Dashboard). Let the Shelf own its scroll,
+        // and yield to an active chat scroll on the Buddy tab.
+        guard !vm.isScrollGestureActive, coordinator.currentView != .shelf else { return }
+        guard let index = tabs.firstIndex(where: { $0.view == coordinator.currentView }) else { return }
+        let target = forward ? index + 1 : index - 1
+        guard tabs.indices.contains(target) else { return }
+        withAnimation(.smooth) {
+            coordinator.currentView = tabs[target].view
+        }
+        if Defaults[.enableHaptics] {
+            haptics.toggle()
         }
     }
 }

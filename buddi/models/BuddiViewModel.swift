@@ -29,6 +29,9 @@ class BuddiViewModel: NSObject, ObservableObject {
 
     @Published var edgeAutoOpenActive: Bool = false
     @Published var isHoveringCalendar: Bool = false
+    // True while the cursor is over the now-playing music box. A horizontal swipe there
+    // skips tracks; a horizontal swipe anywhere else on the open panel switches tabs.
+    @Published var isHoveringMusicPlayer: Bool = false
     @Published var isBatteryPopoverActive: Bool = false
 
     // MARK: - Gesture Suppression (for buddy chat scroll)

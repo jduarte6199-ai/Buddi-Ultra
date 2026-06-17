@@ -48,13 +48,13 @@ Anthropic removed /buddy from Claude Code in v2.1.97. Buddi gives your buddy a p
 
 Download `Buddi-Ultra.zip` from the [latest release](https://github.com/jduarte6199-ai/Buddi-Ultra/releases/latest), unzip it, and drag `buddi.app` into your Applications folder.
 
-The app is ad-hoc signed and not notarized, so the first time you open it: right-click `buddi.app` and choose **Open**, then **Open** again. Or strip the quarantine flag:
+The app is ad-hoc signed and not notarized, so macOS quarantines it on download and may say **"buddi is damaged and can't be opened."** It is **not** damaged, that is just Gatekeeper blocking an un-notarized app. Clear the quarantine flag once and it opens normally:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/buddi.app
 ```
 
-Apple Silicon (arm64).
+(Adjust the path if you kept it somewhere other than Applications. Right-click → Open does **not** clear the "damaged" state, so use the command above.) Apple Silicon (arm64).
 
 ## How It Works
 

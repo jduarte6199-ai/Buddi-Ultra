@@ -374,10 +374,11 @@ struct ContentView: View {
                     view
                         // One horizontal swipe handler: over the music box it skips
                         // tracks, anywhere else it moves between tabs (pet ↔ music).
-                        .panGesture(direction: .left, threshold: 20) { _, phase in
+                        // Swipe right = move toward the right tab (Pet → Music → Shelf).
+                        .panGesture(direction: .right, threshold: 20) { _, phase in
                             handleHorizontalSwipe(forward: true, phase: phase)
                         }
-                        .panGesture(direction: .right, threshold: 20) { _, phase in
+                        .panGesture(direction: .left, threshold: 20) { _, phase in
                             handleHorizontalSwipe(forward: false, phase: phase)
                         }
                 }
@@ -635,7 +636,7 @@ struct ContentView: View {
 
     /// Single horizontal two-finger swipe handler for the open panel.
     /// Over the music box it skips tracks; anywhere else it moves between tabs.
-    /// `forward == true` = swipe left (next track / next tab), `false` = swipe right.
+    /// `forward == true` = swipe right (toward the right tab / next track).
     private func handleHorizontalSwipe(forward: Bool, phase: NSEvent.Phase) {
         guard phase == .began, vm.notchState == .open else { return }
 

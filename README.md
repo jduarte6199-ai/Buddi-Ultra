@@ -46,15 +46,15 @@ Anthropic removed /buddy from Claude Code in v2.1.97. Buddi gives your buddy a p
 
 ## Install
 
-### Homebrew
+Download `Buddi-Ultra.zip` from the [latest release](https://github.com/jduarte6199-ai/Buddi-Ultra/releases/latest), unzip it, and drag `buddi.app` into your Applications folder.
+
+The app is ad-hoc signed and not notarized, so the first time you open it: right-click `buddi.app` and choose **Open**, then **Open** again. Or strip the quarantine flag:
 
 ```bash
-brew install --cask talkvalue/buddi/buddi
+xattr -dr com.apple.quarantine /Applications/buddi.app
 ```
 
-### Manual Download
-
-Download the latest `.dmg` from the [Releases page](https://github.com/talkvalue/Buddi/releases/latest).
+Apple Silicon (arm64).
 
 ## How It Works
 

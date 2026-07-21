@@ -373,7 +373,8 @@ struct ContentView: View {
                 .conditionalModifier(Defaults[.enableGestures]) { view in
                     view
                         // One horizontal swipe handler: over the music box it skips
-                        // tracks, anywhere else it moves between tabs (pet ↔ music).
+                        // tracks, over the calendar it yields to the day wheel,
+                        // anywhere else it moves between tabs (pet ↔ music).
                         // Swipe right = move toward the right tab (Pet → Music → Shelf).
                         .panGesture(direction: .right, threshold: 20) { _, phase in
                             handleHorizontalSwipe(forward: true, phase: phase)
@@ -650,9 +651,14 @@ struct ContentView: View {
             return
         }
 
-        // Otherwise move between tabs (pet ↔ Dashboard). Let the Shelf own its scroll,
-        // and yield to an active chat scroll on the Buddy tab.
-        guard !vm.isScrollGestureActive, coordinator.currentView != .shelf else { return }
+        // Over the calendar on the Dashboard → its day wheel owns the horizontal
+        // scroll, never tabs.
+        if coordinator.currentView == .home && vm.isHoveringCalendar { return }
+
+        // Otherwise move between tabs (pet ↔ Dashboard). Let the Shelf own its scroll.
+        // Vertical chat scrolls never reach here: the pan monitor requires the
+        // horizontal delta to dominate before firing.
+        guard coordinator.currentView != .shelf else { return }
         guard let index = tabs.firstIndex(where: { $0.view == coordinator.currentView }) else { return }
         let target = forward ? index + 1 : index - 1
         guard tabs.indices.contains(target) else { return }

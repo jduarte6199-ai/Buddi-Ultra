@@ -60,7 +60,9 @@ struct ContentView: View {
     private var computedChinWidth: CGFloat {
         var chinWidth: CGFloat = vm.closedNotchSize.width
 
-        if coordinator.expandingView.type == .battery && coordinator.expandingView.show
+        if coordinator.sessionDonePopup.show && vm.notchState == .closed {
+            chinWidth = 500
+        } else if coordinator.expandingView.type == .battery && coordinator.expandingView.show
             && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
         {
             chinWidth = 640
@@ -263,7 +265,29 @@ struct ContentView: View {
                     .padding(.top, 40)
                     Spacer()
                 } else {
-                    if coordinator.expandingView.type == .battery && coordinator.expandingView.show
+                    if coordinator.sessionDonePopup.show && vm.notchState == .closed {
+                        HStack(spacing: 0) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("Done")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.white)
+                            }
+
+                            Rectangle()
+                                .fill(.black)
+                                .frame(width: vm.closedNotchSize.width + 10)
+
+                            Text(coordinator.sessionDonePopup.projectName)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .foregroundStyle(.gray)
+                                .frame(maxWidth: 180, alignment: .trailing)
+                        }
+                        .frame(height: vm.effectiveClosedNotchHeight, alignment: .center)
+                    } else if coordinator.expandingView.type == .battery && coordinator.expandingView.show
                         && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
                     {
                         HStack(spacing: 0) {
@@ -372,14 +396,14 @@ struct ContentView: View {
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
                 .conditionalModifier(Defaults[.enableGestures]) { view in
                     view
-                        // One horizontal swipe handler: moves between tabs from any
-                        // tab, yielding only to real horizontal scrollers (calendar
-                        // day wheel, shelf file strip).
-                        // Swipe right = move toward the right tab (Pet → Music → Shelf).
-                        .panGesture(direction: .right, threshold: 20) { _, phase in
+                        // One horizontal swipe handler, iPhone-style direction:
+                        // swiping left slides the content left and reveals the tab
+                        // on the right (Pet → Music → Shelf); swiping right goes
+                        // back. Over the music box the same mapping skips tracks.
+                        .panGesture(direction: .left, threshold: 30) { _, phase in
                             handleHorizontalSwipe(forward: true, phase: phase)
                         }
-                        .panGesture(direction: .left, threshold: 20) { _, phase in
+                        .panGesture(direction: .right, threshold: 30) { _, phase in
                             handleHorizontalSwipe(forward: false, phase: phase)
                         }
                 }
@@ -636,13 +660,23 @@ struct ContentView: View {
     }
 
     /// Single horizontal two-finger swipe handler for the open panel.
-    /// A swipe always moves between tabs, from any tab. The only zones that keep
-    /// the gesture for themselves are real horizontal scrollers: the calendar's
-    /// day wheel and the shelf's file strip. Track skipping uses the player's
-    /// prev/next buttons, not swipes.
-    /// `forward == true` = swipe right (toward the tab on the right).
+    /// iPhone-style: swiping left slides the content left, so it reveals the tab
+    /// on the right (or the next track over the music box); swiping right goes
+    /// back. Real horizontal scrollers (calendar day wheel, shelf file strip)
+    /// keep the gesture while hovered.
+    /// `forward == true` = swipe left (toward the tab on the right / next track).
     private func handleHorizontalSwipe(forward: Bool, phase: NSEvent.Phase) {
         guard phase == .began, vm.notchState == .open else { return }
+
+        // Over the now-playing box on the Dashboard → skip tracks, never tabs.
+        if coordinator.currentView == .home && vm.isHoveringMusicPlayer {
+            if forward {
+                MusicManager.shared.nextTrack()
+            } else {
+                MusicManager.shared.previousTrack()
+            }
+            return
+        }
 
         // Real horizontal scrollers own the gesture while hovered.
         if coordinator.currentView == .home && vm.isHoveringCalendar { return }

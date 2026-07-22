@@ -441,6 +441,11 @@ struct NotchHomeView: View {
     private var mainContent: some View {
         HStack(alignment: .top, spacing: (shouldShowCamera && Defaults[.showCalendar]) ? 10 : 15) {
             MusicPlayerView(albumArtNamespace: albumArtNamespace)
+                // Marks the music box: a horizontal swipe over it skips tracks
+                // instead of switching tabs (handled centrally in ContentView).
+                .onHover { hovering in
+                    vm.isHoveringMusicPlayer = hovering
+                }
 
             if Defaults[.showCalendar] {
                 CalendarView()

@@ -144,6 +144,7 @@ final class BuddiSessionBridge: ObservableObject {
             if let soundName = BuddiSettings.notificationSound.soundName {
                 NSSound(named: soundName)?.play()
             }
+            BuddiViewCoordinator.shared.showSessionDonePopup(projectName: session.projectName)
             return
         }
     }

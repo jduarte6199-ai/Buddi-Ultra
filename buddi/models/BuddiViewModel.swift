@@ -29,6 +29,9 @@ class BuddiViewModel: NSObject, ObservableObject {
 
     @Published var edgeAutoOpenActive: Bool = false
     @Published var isHoveringCalendar: Bool = false
+    // True while the cursor is over the now-playing music box. A horizontal swipe
+    // there skips tracks; anywhere else on the open panel it switches tabs.
+    @Published var isHoveringMusicPlayer: Bool = false
     // True while the cursor is over the shelf's horizontal file strip. That strip
     // owns horizontal swipes; anywhere else a swipe switches tabs.
     @Published var isHoveringShelfScroller: Bool = false

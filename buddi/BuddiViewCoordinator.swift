@@ -46,6 +46,13 @@ struct ExpandedItem {
     var browser: BrowserType = .chromium
 }
 
+/// Dynamic-island style banner shown on the closed notch when a Claude
+/// session finishes and is waiting for input.
+struct SessionDonePopup {
+    var show: Bool = false
+    var projectName: String = ""
+}
+
 @MainActor
 class BuddiViewCoordinator: ObservableObject {
     static let shared = BuddiViewCoordinator()
@@ -272,6 +279,25 @@ class BuddiViewCoordinator: ObservableObject {
                 self.expandingView.type = type
                 self.expandingView.value = value
                 self.expandingView.browser = browser
+            }
+        }
+    }
+
+    @Published var sessionDonePopup: SessionDonePopup = .init()
+    private var sessionDonePopupTask: Task<Void, Never>?
+
+    /// Show the "session done" banner on the closed notch, auto-hiding after a
+    /// few seconds. Repeated calls restart the timer with the latest project.
+    func showSessionDonePopup(projectName: String) {
+        sessionDonePopupTask?.cancel()
+        withAnimation(.smooth) {
+            sessionDonePopup = SessionDonePopup(show: true, projectName: projectName)
+        }
+        sessionDonePopupTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self = self, !Task.isCancelled else { return }
+            withAnimation(.smooth) {
+                self.sessionDonePopup.show = false
             }
         }
     }

@@ -104,7 +104,19 @@ private struct ScrollMonitor: NSViewRepresentable {
         }
 
         private func handleScroll(_ event: NSEvent) {
-            if event.phase == .ended || event.momentumPhase == .ended {
+            // Momentum (inertia) events arrive after the fingers lift and would
+            // re-trigger the gesture several times per physical swipe. Only track
+            // finger-driven events; any momentum event just closes the gesture.
+            if event.momentumPhase != [] {
+                if active {
+                    action(accumulated.magnitude, .ended)
+                }
+                active = false
+                accumulated = 0
+                endTask?.cancel()
+                return
+            }
+            if event.phase == .ended || event.phase == .cancelled {
                 if active {
                     action(accumulated.magnitude, .ended)
                 } else {

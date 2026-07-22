@@ -372,9 +372,9 @@ struct ContentView: View {
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
                 .conditionalModifier(Defaults[.enableGestures]) { view in
                     view
-                        // One horizontal swipe handler: over the music box it skips
-                        // tracks, over the calendar it yields to the day wheel,
-                        // anywhere else it moves between tabs (pet ↔ music).
+                        // One horizontal swipe handler: moves between tabs from any
+                        // tab, yielding only to real horizontal scrollers (calendar
+                        // day wheel, shelf file strip).
                         // Swipe right = move toward the right tab (Pet → Music → Shelf).
                         .panGesture(direction: .right, threshold: 20) { _, phase in
                             handleHorizontalSwipe(forward: true, phase: phase)
@@ -636,29 +636,20 @@ struct ContentView: View {
     }
 
     /// Single horizontal two-finger swipe handler for the open panel.
-    /// Over the music box it skips tracks; anywhere else it moves between tabs.
-    /// `forward == true` = swipe right (toward the right tab / next track).
+    /// A swipe always moves between tabs, from any tab. The only zones that keep
+    /// the gesture for themselves are real horizontal scrollers: the calendar's
+    /// day wheel and the shelf's file strip. Track skipping uses the player's
+    /// prev/next buttons, not swipes.
+    /// `forward == true` = swipe right (toward the tab on the right).
     private func handleHorizontalSwipe(forward: Bool, phase: NSEvent.Phase) {
         guard phase == .began, vm.notchState == .open else { return }
 
-        // Over the now-playing box on the Dashboard → control playback, never tabs.
-        if coordinator.currentView == .home && vm.isHoveringMusicPlayer {
-            if forward {
-                MusicManager.shared.nextTrack()
-            } else {
-                MusicManager.shared.previousTrack()
-            }
-            return
-        }
-
-        // Over the calendar on the Dashboard → its day wheel owns the horizontal
-        // scroll, never tabs.
+        // Real horizontal scrollers own the gesture while hovered.
         if coordinator.currentView == .home && vm.isHoveringCalendar { return }
+        if coordinator.currentView == .shelf && vm.isHoveringShelfScroller { return }
 
-        // Otherwise move between tabs (pet ↔ Dashboard). Let the Shelf own its scroll.
         // Vertical chat scrolls never reach here: the pan monitor requires the
         // horizontal delta to dominate before firing.
-        guard coordinator.currentView != .shelf else { return }
         guard let index = tabs.firstIndex(where: { $0.view == coordinator.currentView }) else { return }
         let target = forward ? index + 1 : index - 1
         guard tabs.indices.contains(target) else { return }

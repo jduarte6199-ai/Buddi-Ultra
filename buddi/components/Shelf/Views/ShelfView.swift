@@ -102,6 +102,10 @@ struct ShelfView: View {
                 }
                 .padding(-spacing)
                 .scrollIndicators(.never)
+                // The file strip owns horizontal swipes while hovered; everywhere
+                // else on the shelf a swipe switches tabs (see ContentView).
+                .onHover { vm.isHoveringShelfScroller = $0 }
+                .onDisappear { vm.isHoveringShelfScroller = false }
                 .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], isTargeted: $vm.dragDetectorTargeting) { providers in
                     handleDrop(providers: providers)
                 }

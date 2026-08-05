@@ -147,6 +147,22 @@ class MusicManager: ObservableObject {
         return newController
     }
 
+    /// Cycle the active media source (Now Playing → Apple Music → Spotify →
+    /// YouTube Music). Triggered by a vertical swipe over the music box.
+    /// Skips Now Playing when it is deprecated on this macOS version.
+    func cycleMediaSource(forward: Bool) {
+        var types = MediaControllerType.allCases
+        if isNowPlayingDeprecated {
+            types.removeAll { $0 == .nowPlaying }
+        }
+        guard !types.isEmpty else { return }
+        let current = Defaults[.mediaController]
+        let index = types.firstIndex(of: current) ?? 0
+        let step = forward ? 1 : types.count - 1
+        Defaults[.mediaController] = types[(index + step) % types.count]
+        NotificationCenter.default.post(name: Notification.Name.mediaControllerChanged, object: nil)
+    }
+
     private func setActiveControllerBasedOnPreference() {
         let preferredType = Defaults[.mediaController]
         print("Preferred Media Controller: \(preferredType)")

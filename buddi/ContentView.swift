@@ -609,6 +609,18 @@ struct ContentView: View {
     // MARK: - Gesture Handling
 
     private func handleDownGesture(translation: CGFloat, phase: NSEvent.Phase) {
+        // Over the music box on the open panel, swipe down = previous media
+        // source (mirror of the swipe-up handler).
+        if vm.notchState == .open {
+            if coordinator.currentView == .home && vm.isHoveringMusicPlayer && phase == .began {
+                MusicManager.shared.cycleMediaSource(forward: false)
+                if Defaults[.enableHaptics] {
+                    haptics.toggle()
+                }
+            }
+            return
+        }
+
         guard vm.notchState == .closed else { return }
 
         if phase == .ended {
@@ -633,6 +645,19 @@ struct ContentView: View {
 
     private func handleUpGesture(translation: CGFloat, phase: NSEvent.Phase) {
         guard vm.notchState == .open && !vm.isHoveringCalendar && !vm.isScrollGestureActive else { return }
+
+        // Over the music box a vertical swipe cycles the media source
+        // (Now Playing / Apple Music / Spotify / YouTube Music) instead of
+        // closing the notch. Swipe up = next source.
+        if coordinator.currentView == .home && vm.isHoveringMusicPlayer {
+            if phase == .began {
+                MusicManager.shared.cycleMediaSource(forward: true)
+                if Defaults[.enableHaptics] {
+                    haptics.toggle()
+                }
+            }
+            return
+        }
 
         withAnimation(animationSpring) {
             gestureProgress = (translation / Defaults[.gestureSensitivity]) * -20

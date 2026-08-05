@@ -270,8 +270,10 @@ struct ContentView: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.green)
-                                Text("Done")
-                                    .font(.subheadline)
+                                    .symbolEffect(.bounce, value: coordinator.sessionDonePopup.show)
+                                    .shadow(color: .green.opacity(0.6), radius: 5)
+                                Text("Ready")
+                                    .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(.white)
                             }
 
@@ -287,6 +289,18 @@ struct ContentView: View {
                                 .frame(maxWidth: 180, alignment: .trailing)
                         }
                         .frame(height: vm.effectiveClosedNotchHeight, alignment: .center)
+                        .contentShape(Rectangle())
+                        // Tap = jump to the app hosting that session (VS Code,
+                        // Terminal, ...) instead of opening the notch panel.
+                        .onTapGesture {
+                            let popup = coordinator.sessionDonePopup
+                            if let session = BuddiSessionBridge.shared.sessionMonitor.instances
+                                .first(where: { $0.sessionId == popup.sessionId }) {
+                                SessionAppFocuser.focusHostApp(of: session)
+                            }
+                            coordinator.hideSessionDonePopup()
+                        }
+                        .transition(.scale(scale: 0.6, anchor: .top).combined(with: .opacity))
                     } else if coordinator.expandingView.type == .battery && coordinator.expandingView.show
                         && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
                     {
@@ -769,7 +783,8 @@ extension ContentView {
         let sessions = BuddiSessionBridge.shared.sessionMonitor.instances
         let isProcessing = sessions.contains { $0.phase.isActive }
         let hasPending = sessions.contains { $0.phase.isWaitingForApproval }
-        let hasWaiting = sessions.contains { $0.phase == .waitingForInput }
+        let waitingCount = sessions.filter { $0.phase == .waitingForInput }.count
+        let hasWaiting = waitingCount > 0
 
         return HStack(spacing: 0) {
             HStack(spacing: 2) {
@@ -791,9 +806,22 @@ extension ContentView {
                 if isProcessing || hasPending {
                     ProcessingSpinner()
                 } else if hasWaiting {
-                    ReadyForInputIndicatorIcon(
-                        size: min(notchContentHeight * 0.6, 14)
-                    )
+                    // Unanswered-chats indicator: the count shows how many
+                    // sessions are sitting there waiting for a reply.
+                    HStack(spacing: 3) {
+                        ReadyForInputIndicatorIcon(
+                            size: min(notchContentHeight * 0.6, 14)
+                        )
+                        if waitingCount > 1 {
+                            Text("\(waitingCount)")
+                                .font(.system(
+                                    size: min(notchContentHeight * 0.45, 10),
+                                    weight: .semibold,
+                                    design: .monospaced
+                                ))
+                                .foregroundStyle(TerminalColors.green)
+                        }
+                    }
                 }
             }
             .frame(width: sideWidth, height: notchContentHeight)

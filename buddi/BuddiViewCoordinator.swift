@@ -47,10 +47,12 @@ struct ExpandedItem {
 }
 
 /// Dynamic-island style banner shown on the closed notch when a Claude
-/// session finishes and is waiting for input.
+/// session finishes and is waiting for input. Tapping it brings the app
+/// hosting that session (e.g. VS Code) to the front.
 struct SessionDonePopup {
     var show: Bool = false
     var projectName: String = ""
+    var sessionId: String = ""
 }
 
 @MainActor
@@ -288,17 +290,27 @@ class BuddiViewCoordinator: ObservableObject {
 
     /// Show the "session done" banner on the closed notch, auto-hiding after a
     /// few seconds. Repeated calls restart the timer with the latest project.
-    func showSessionDonePopup(projectName: String) {
+    /// The bouncy spring gives it the AirPods-connect pop.
+    func showSessionDonePopup(projectName: String, sessionId: String) {
         sessionDonePopupTask?.cancel()
-        withAnimation(.smooth) {
-            sessionDonePopup = SessionDonePopup(show: true, projectName: projectName)
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.6)) {
+            sessionDonePopup = SessionDonePopup(
+                show: true, projectName: projectName, sessionId: sessionId
+            )
         }
         sessionDonePopupTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
+            try? await Task.sleep(for: .seconds(5))
             guard let self = self, !Task.isCancelled else { return }
             withAnimation(.smooth) {
                 self.sessionDonePopup.show = false
             }
+        }
+    }
+
+    func hideSessionDonePopup() {
+        sessionDonePopupTask?.cancel()
+        withAnimation(.smooth) {
+            sessionDonePopup.show = false
         }
     }
 

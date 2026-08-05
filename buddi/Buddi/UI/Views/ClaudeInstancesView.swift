@@ -88,7 +88,12 @@ struct ClaudeInstancesView: View {
     // MARK: - Actions
 
     private func focusSession(_ session: SessionState) {
-        guard session.isInMultiplexer else { return }
+        // Sessions outside a multiplexer (e.g. VS Code's integrated terminal)
+        // are focused by bringing their host app to the front.
+        guard session.isInMultiplexer else {
+            SessionAppFocuser.focusHostApp(of: session)
+            return
+        }
 
         Task {
             if let pid = session.pid {
@@ -234,10 +239,11 @@ struct InstanceRow: View {
                         onChat()
                     }
 
-                    // Go to Terminal button (only if yabai available)
-                    if isYabaiAvailable {
+                    // Jump to the session: tmux window via yabai, or the host
+                    // app (VS Code, Terminal, ...) via its pid.
+                    if isYabaiAvailable || session.pid != nil {
                         TerminalButton(
-                            isEnabled: session.isInMultiplexer,
+                            isEnabled: session.isInMultiplexer || session.pid != nil,
                             onTap: { onFocus() }
                         )
                     }
@@ -252,7 +258,7 @@ struct InstanceRow: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else {
                 HStack(spacing: 8) {
-                    if session.isInMultiplexer && isYabaiAvailable {
+                    if (session.isInMultiplexer && isYabaiAvailable) || session.pid != nil {
                         IconButton(icon: "eye") {
                             onFocus()
                         }

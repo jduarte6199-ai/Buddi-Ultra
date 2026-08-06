@@ -101,6 +101,16 @@ final class BuddiSessionBridge: ObservableObject {
 
         guard !newlyWaitingSessions.isEmpty else { return }
 
+        // The banner always pops for a freshly ready chat, even if its host
+        // app is frontmost (VS Code is usually frontmost anyway). Only the
+        // sound stays gated on focus, handled below.
+        if let first = newlyWaitingSessions.first {
+            BuddiViewCoordinator.shared.showSessionDonePopup(
+                projectName: first.projectName,
+                sessionId: first.sessionId
+            )
+        }
+
         Task { [weak self] in
             await self?.playWaitingForInputNotificationIfNeeded(for: newlyWaitingSessions)
         }
@@ -144,10 +154,6 @@ final class BuddiSessionBridge: ObservableObject {
             if let soundName = BuddiSettings.notificationSound.soundName {
                 NSSound(named: soundName)?.play()
             }
-            BuddiViewCoordinator.shared.showSessionDonePopup(
-                projectName: session.projectName,
-                sessionId: session.sessionId
-            )
             return
         }
     }

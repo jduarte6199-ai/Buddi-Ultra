@@ -121,10 +121,30 @@ actor ConversationParser {
             let isMeta = json["isMeta"] as? Bool ?? false
 
             if type == "user" && !isMeta {
-                if let message = json["message"] as? [String: Any],
-                   let msgContent = message["content"] as? String {
-                    if !msgContent.hasPrefix("<command-name>") && !msgContent.hasPrefix("<local-command") && !msgContent.hasPrefix("Caveat:") {
-                        firstUserMessage = Self.truncateMessage(msgContent, maxLength: 50)
+                if let message = json["message"] as? [String: Any] {
+                    var candidate: String?
+                    if let msgContent = message["content"] as? String {
+                        candidate = msgContent
+                    } else if let contentArray = message["content"] as? [[String: Any]] {
+                        // VS Code / IDE sessions wrap the prompt in content
+                        // blocks; take the first real text block (skipping
+                        // injected reminders and tool results).
+                        for block in contentArray {
+                            guard block["type"] as? String == "text",
+                                  let text = block["text"] as? String,
+                                  !text.isEmpty,
+                                  !text.hasPrefix("<system-reminder>")
+                            else { continue }
+                            candidate = text
+                            break
+                        }
+                    }
+                    if let candidate,
+                       !candidate.hasPrefix("<command-name>"),
+                       !candidate.hasPrefix("<local-command"),
+                       !candidate.hasPrefix("Caveat:"),
+                       !candidate.hasPrefix("<system-reminder>") {
+                        firstUserMessage = Self.truncateMessage(candidate, maxLength: 50)
                         break
                     }
                 }

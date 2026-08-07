@@ -158,13 +158,23 @@ struct InstanceRow: View {
 
             // Text content
             VStack(alignment: .leading, spacing: 2) {
-                Text(session.displayTitle)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    // Hover shows the full chat name (matches the VS Code tab)
-                    // plus the project it belongs to.
-                    .help("\(session.displayTitle) · \(session.projectName)")
+                // Chat title first (like the Claude Code tab); the project is
+                // a small secondary label so it stays readable but discreet.
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(session.displayTitle)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                    if session.displayTitle != session.projectName {
+                        Text(session.projectName)
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .layoutPriority(-1)
+                    }
+                }
+                // Hover shows the full chat name plus the project.
+                .help("\(session.displayTitle) · \(session.projectName)")
 
                 // Show tool call when waiting for approval, otherwise last activity
                 if isWaitingForApproval, let toolName = session.pendingToolName {

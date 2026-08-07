@@ -28,6 +28,22 @@ struct SessionPopupBanner: View {
         isApproval ? TerminalColors.amber : .green
     }
 
+    /// Secondary line: project (when the title is a real chat name), the tool
+    /// asking for approval, and the context snippet, joined compactly.
+    private var subtitle: String {
+        var parts: [String] = []
+        if popup.projectName != popup.title, !popup.projectName.isEmpty {
+            parts.append(popup.projectName)
+        }
+        if case .approval(let toolName) = popup.kind {
+            parts.append(toolName)
+        }
+        if !popup.detail.isEmpty {
+            parts.append(popup.detail)
+        }
+        return parts.joined(separator: " · ")
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
@@ -52,13 +68,8 @@ struct SessionPopupBanner: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
 
-                    if case .approval(let toolName) = popup.kind {
-                        Text(popup.detail.isEmpty ? toolName : "\(toolName) · \(popup.detail)")
-                            .font(.caption2)
-                            .foregroundStyle(.gray)
-                            .lineLimit(1)
-                    } else if !popup.detail.isEmpty {
-                        Text(popup.detail)
+                    if !subtitle.isEmpty {
+                        Text(subtitle)
                             .font(.caption2)
                             .foregroundStyle(.gray)
                             .lineLimit(1)

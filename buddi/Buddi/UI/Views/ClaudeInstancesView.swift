@@ -96,10 +96,16 @@ struct ClaudeInstancesView: View {
         }
 
         Task {
+            let focused: Bool
             if let pid = session.pid {
-                _ = await YabaiController.shared.focusWindow(forClaudePid: pid)
+                focused = await YabaiController.shared.focusWindow(forClaudePid: pid)
             } else {
-                _ = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
+                focused = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
+            }
+            // Without yabai (or if it misses), fall back to raising the
+            // session's host app directly.
+            if !focused {
+                SessionAppFocuser.focusHostApp(of: session)
             }
         }
     }

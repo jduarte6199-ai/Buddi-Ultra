@@ -266,40 +266,29 @@ struct ContentView: View {
                     Spacer()
                 } else {
                     if coordinator.sessionDonePopup.show && vm.notchState == .closed {
-                        HStack(spacing: 0) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                    .symbolEffect(.bounce, value: coordinator.sessionDonePopup.show)
-                                    .shadow(color: .green.opacity(0.6), radius: 5)
-                                Text("Ready")
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(.white)
+                        SessionPopupBanner(
+                            popup: coordinator.sessionDonePopup,
+                            notchWidth: vm.closedNotchSize.width,
+                            onOpen: {
+                                let popup = coordinator.sessionDonePopup
+                                if let session = BuddiSessionBridge.shared.sessionMonitor.instances
+                                    .first(where: { $0.sessionId == popup.sessionId }) {
+                                    SessionAppFocuser.focusHostApp(of: session)
+                                }
+                                coordinator.hideSessionDonePopup()
+                            },
+                            onApprove: {
+                                BuddiSessionBridge.shared.sessionMonitor
+                                    .approvePermission(sessionId: coordinator.sessionDonePopup.sessionId)
+                                coordinator.hideSessionDonePopup()
+                            },
+                            onDeny: {
+                                BuddiSessionBridge.shared.sessionMonitor
+                                    .denyPermission(sessionId: coordinator.sessionDonePopup.sessionId, reason: nil)
+                                coordinator.hideSessionDonePopup()
                             }
-
-                            Rectangle()
-                                .fill(.black)
-                                .frame(width: vm.closedNotchSize.width + 10)
-
-                            Text(coordinator.sessionDonePopup.projectName)
-                                .font(.subheadline)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                                .foregroundStyle(.gray)
-                                .frame(maxWidth: 180, alignment: .trailing)
-                        }
+                        )
                         .frame(height: vm.effectiveClosedNotchHeight, alignment: .center)
-                        .contentShape(Rectangle())
-                        // Tap = jump to the app hosting that session (VS Code,
-                        // Terminal, ...) instead of opening the notch panel.
-                        .onTapGesture {
-                            let popup = coordinator.sessionDonePopup
-                            if let session = BuddiSessionBridge.shared.sessionMonitor.instances
-                                .first(where: { $0.sessionId == popup.sessionId }) {
-                                SessionAppFocuser.focusHostApp(of: session)
-                            }
-                            coordinator.hideSessionDonePopup()
-                        }
                         .transition(.scale(scale: 0.6, anchor: .top).combined(with: .opacity))
                     } else if coordinator.expandingView.type == .battery && coordinator.expandingView.show
                         && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]

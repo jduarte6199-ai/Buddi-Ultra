@@ -105,9 +105,12 @@ final class BuddiSessionBridge: ObservableObject {
         // app is frontmost (VS Code is usually frontmost anyway). Only the
         // sound stays gated on focus, handled below.
         if let first = newlyWaitingSessions.first {
-            BuddiViewCoordinator.shared.showSessionDonePopup(
+            BuddiViewCoordinator.shared.showSessionPopup(
+                kind: .ready,
+                title: first.displayTitle,
                 projectName: first.projectName,
-                sessionId: first.sessionId
+                sessionId: first.sessionId,
+                detail: Self.popupDetail(from: first.lastMessage)
             )
         }
 
@@ -130,14 +133,40 @@ final class BuddiSessionBridge: ObservableObject {
             !knownPendingPermissionIDs.contains($0)
         }
 
-        guard hasNewPendingPermission,
-              buddiViewModel?.notchState == .closed,
+        guard hasNewPendingPermission else { return }
+
+        // Approval popup with inline approve/deny, always shown, so quick
+        // decisions never require opening the panel or the terminal.
+        if let session = pendingInstances.first(where: {
+            guard let id = $0.pendingToolId else { return false }
+            return !knownPendingPermissionIDs.contains(id)
+        }), let toolName = session.pendingToolName {
+            BuddiViewCoordinator.shared.showSessionPopup(
+                kind: .approval(toolName: MCPToolFormatter.formatToolName(toolName)),
+                title: session.displayTitle,
+                projectName: session.projectName,
+                sessionId: session.sessionId,
+                detail: Self.popupDetail(from: session.pendingToolInput)
+            )
+        }
+
+        guard buddiViewModel?.notchState == .closed,
               !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace()
         else {
             return
         }
 
         BuddiViewCoordinator.shared.toggleExpandingView(status: true, type: .buddy)
+    }
+
+    /// Single-line, length-capped context string for the notch popup.
+    private static func popupDetail(from text: String?) -> String {
+        guard let text else { return "" }
+        let firstLine = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+        return firstLine.count > 90 ? String(firstLine.prefix(90)) + "…" : firstLine
     }
 
     private func playWaitingForInputNotificationIfNeeded(for sessions: [SessionState]) async {

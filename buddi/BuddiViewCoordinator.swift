@@ -46,13 +46,26 @@ struct ExpandedItem {
     var browser: BrowserType = .chromium
 }
 
+/// What a session popup is announcing.
+enum SessionPopupKind: Equatable {
+    /// Claude finished and the chat is waiting for a reply.
+    case ready
+    /// A tool needs approval; the popup offers approve/deny inline.
+    case approval(toolName: String)
+}
+
 /// Dynamic-island style banner shown on the closed notch when a Claude
-/// session finishes and is waiting for input. Tapping it brings the app
-/// hosting that session (e.g. VS Code) to the front.
+/// session finishes or needs approval. Tapping it jumps to the session's
+/// VS Code window; approval popups carry inline approve/deny buttons.
 struct SessionDonePopup {
     var show: Bool = false
+    /// Conversation title, i.e. the chat tab name in VS Code.
+    var title: String = ""
     var projectName: String = ""
     var sessionId: String = ""
+    var kind: SessionPopupKind = .ready
+    /// One-line context: last assistant message or pending tool input.
+    var detail: String = ""
 }
 
 @MainActor
@@ -288,18 +301,30 @@ class BuddiViewCoordinator: ObservableObject {
     @Published var sessionDonePopup: SessionDonePopup = .init()
     private var sessionDonePopupTask: Task<Void, Never>?
 
-    /// Show the "session done" banner on the closed notch, auto-hiding after a
-    /// few seconds. Repeated calls restart the timer with the latest project.
+    /// Show a session banner on the closed notch, auto-hiding after a few
+    /// seconds (approval popups linger longer so there is time to act).
     /// The bouncy spring gives it the AirPods-connect pop.
-    func showSessionDonePopup(projectName: String, sessionId: String) {
+    func showSessionPopup(
+        kind: SessionPopupKind,
+        title: String,
+        projectName: String,
+        sessionId: String,
+        detail: String = ""
+    ) {
         sessionDonePopupTask?.cancel()
         withAnimation(.spring(response: 0.45, dampingFraction: 0.6)) {
             sessionDonePopup = SessionDonePopup(
-                show: true, projectName: projectName, sessionId: sessionId
+                show: true,
+                title: title,
+                projectName: projectName,
+                sessionId: sessionId,
+                kind: kind,
+                detail: detail
             )
         }
+        let duration: TimeInterval = (kind == .ready) ? 5 : 12
         sessionDonePopupTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(5))
+            try? await Task.sleep(for: .seconds(duration))
             guard let self = self, !Task.isCancelled else { return }
             withAnimation(.smooth) {
                 self.sessionDonePopup.show = false

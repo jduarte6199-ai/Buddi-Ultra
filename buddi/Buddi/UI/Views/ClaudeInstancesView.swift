@@ -162,6 +162,9 @@ struct InstanceRow: View {
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
+                    // Hover shows the full chat name (matches the VS Code tab)
+                    // plus the project it belongs to.
+                    .help("\(session.displayTitle) · \(session.projectName)")
 
                 // Show tool call when waiting for approval, otherwise last activity
                 if isWaitingForApproval, let toolName = session.pendingToolName {

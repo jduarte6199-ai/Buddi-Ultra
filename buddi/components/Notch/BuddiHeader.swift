@@ -12,6 +12,11 @@ struct BuddiHeader: View {
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var coordinator = BuddiViewCoordinator.shared
     @StateObject var tvm = ShelfStateViewModel.shared
+
+    private var isLoomInstalled: Bool {
+        FileManager.default.fileExists(atPath: "/Applications/Loom.app")
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             HStack {
@@ -57,12 +62,33 @@ struct BuddiHeader: View {
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
+                        // Quick Loom: raises the Loom recorder so a recording
+                        // is one click away. Only shown when Loom is installed.
+                        if isLoomInstalled {
+                            Button(action: {
+                                NSWorkspace.shared.open(
+                                    URL(fileURLWithPath: "/Applications/Loom.app")
+                                )
+                            }) {
+                                Capsule()
+                                    .fill(.black)
+                                    .frame(width: 30, height: 30)
+                                    .overlay {
+                                        Image(systemName: "video.circle.fill")
+                                            .foregroundColor(.white)
+                                            .padding()
+                                            .imageScale(.medium)
+                                    }
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .help("Open Loom recorder")
+                        }
                         if Defaults[.settingsIconInNotch] {
                             Button(action: {
                                 DispatchQueue.main.async {
                                     SettingsWindowController.shared.showWindow()
                                 }
-                                
+
                             }) {
                                 Capsule()
                                     .fill(.black)

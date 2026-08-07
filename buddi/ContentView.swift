@@ -60,9 +60,7 @@ struct ContentView: View {
     private var computedChinWidth: CGFloat {
         var chinWidth: CGFloat = vm.closedNotchSize.width
 
-        if coordinator.sessionDonePopup.show && vm.notchState == .closed {
-            chinWidth = 500
-        } else if coordinator.expandingView.type == .battery && coordinator.expandingView.show
+        if coordinator.expandingView.type == .battery && coordinator.expandingView.show
             && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
         {
             chinWidth = 640
@@ -209,6 +207,37 @@ struct ContentView: View {
                         .frame(width: computedChinWidth, height: vm.chinHeight)
                 }
             }
+
+            // Floating dynamic-island bubble under the notch for session
+            // events (chat ready / approval needed).
+            if coordinator.sessionDonePopup.show && vm.notchState == .closed
+                && !coordinator.helloAnimationRunning
+            {
+                SessionPopupBubble(
+                    popup: coordinator.sessionDonePopup,
+                    onOpen: {
+                        let popup = coordinator.sessionDonePopup
+                        if let session = BuddiSessionBridge.shared.sessionMonitor.instances
+                            .first(where: { $0.sessionId == popup.sessionId }) {
+                            SessionAppFocuser.focusHostApp(of: session)
+                        }
+                        coordinator.hideSessionDonePopup()
+                    },
+                    onApprove: {
+                        BuddiSessionBridge.shared.sessionMonitor
+                            .approvePermission(sessionId: coordinator.sessionDonePopup.sessionId)
+                        coordinator.hideSessionDonePopup()
+                    },
+                    onDeny: {
+                        BuddiSessionBridge.shared.sessionMonitor
+                            .denyPermission(sessionId: coordinator.sessionDonePopup.sessionId, reason: nil)
+                        coordinator.hideSessionDonePopup()
+                    }
+                )
+                .padding(.top, vm.effectiveClosedNotchHeight + 8)
+                .transition(.scale(scale: 0.4, anchor: .top).combined(with: .opacity))
+                .zIndex(5)
+            }
         }
         .padding(.bottom, 8)
         .frame(maxWidth: openNotchSize.width, maxHeight: .infinity, alignment: .top)
@@ -265,32 +294,7 @@ struct ContentView: View {
                     .padding(.top, 40)
                     Spacer()
                 } else {
-                    if coordinator.sessionDonePopup.show && vm.notchState == .closed {
-                        SessionPopupBanner(
-                            popup: coordinator.sessionDonePopup,
-                            notchWidth: vm.closedNotchSize.width,
-                            onOpen: {
-                                let popup = coordinator.sessionDonePopup
-                                if let session = BuddiSessionBridge.shared.sessionMonitor.instances
-                                    .first(where: { $0.sessionId == popup.sessionId }) {
-                                    SessionAppFocuser.focusHostApp(of: session)
-                                }
-                                coordinator.hideSessionDonePopup()
-                            },
-                            onApprove: {
-                                BuddiSessionBridge.shared.sessionMonitor
-                                    .approvePermission(sessionId: coordinator.sessionDonePopup.sessionId)
-                                coordinator.hideSessionDonePopup()
-                            },
-                            onDeny: {
-                                BuddiSessionBridge.shared.sessionMonitor
-                                    .denyPermission(sessionId: coordinator.sessionDonePopup.sessionId, reason: nil)
-                                coordinator.hideSessionDonePopup()
-                            }
-                        )
-                        .frame(height: vm.effectiveClosedNotchHeight, alignment: .center)
-                        .transition(.scale(scale: 0.6, anchor: .top).combined(with: .opacity))
-                    } else if coordinator.expandingView.type == .battery && coordinator.expandingView.show
+                    if coordinator.expandingView.type == .battery && coordinator.expandingView.show
                         && vm.notchState == .closed && Defaults[.showPowerStatusNotifications]
                     {
                         HStack(spacing: 0) {

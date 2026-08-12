@@ -121,32 +121,10 @@ actor ConversationParser {
             let isMeta = json["isMeta"] as? Bool ?? false
 
             if type == "user" && !isMeta {
-                if let message = json["message"] as? [String: Any] {
-                    var candidate: String?
-                    if let msgContent = message["content"] as? String {
-                        candidate = msgContent
-                    } else if let contentArray = message["content"] as? [[String: Any]] {
-                        // VS Code / IDE sessions wrap the prompt in content
-                        // blocks; take the first real text block (skipping
-                        // injected reminders and tool results).
-                        for block in contentArray {
-                            guard block["type"] as? String == "text",
-                                  let text = block["text"] as? String,
-                                  !text.isEmpty,
-                                  !text.hasPrefix("<system-reminder>")
-                            else { continue }
-                            candidate = text
-                            break
-                        }
-                    }
-                    if let candidate,
-                       !candidate.hasPrefix("<command-name>"),
-                       !candidate.hasPrefix("<local-command"),
-                       !candidate.hasPrefix("Caveat:"),
-                       !candidate.hasPrefix("<system-reminder>") {
-                        firstUserMessage = Self.truncateMessage(candidate, maxLength: 50)
-                        break
-                    }
+                if let message = json["message"] as? [String: Any],
+                   let text = Self.userText(from: message) {
+                    firstUserMessage = Self.truncateMessage(text, maxLength: 50)
+                    break
                 }
             }
         }
@@ -194,15 +172,12 @@ actor ConversationParser {
 
             if !foundLastUserMessage && type == "user" {
                 let isMeta = json["isMeta"] as? Bool ?? false
-                if !isMeta, let message = json["message"] as? [String: Any] {
-                    if let msgContent = message["content"] as? String {
-                        if !msgContent.hasPrefix("<command-name>") && !msgContent.hasPrefix("<local-command") && !msgContent.hasPrefix("Caveat:") {
-                            if let timestampStr = json["timestamp"] as? String {
-                                lastUserMessageDate = formatter.date(from: timestampStr)
-                            }
-                            foundLastUserMessage = true
-                        }
+                if !isMeta, let message = json["message"] as? [String: Any],
+                   Self.userText(from: message) != nil {
+                    if let timestampStr = json["timestamp"] as? String {
+                        lastUserMessageDate = formatter.date(from: timestampStr)
                     }
+                    foundLastUserMessage = true
                 }
             }
 
@@ -223,6 +198,37 @@ actor ConversationParser {
             firstUserMessage: firstUserMessage,
             lastUserMessageDate: lastUserMessageDate
         )
+    }
+
+    /// Prefixes marking injected/meta content that must never become a chat
+    /// title or a timestamp anchor. One list for every extraction site.
+    private static let noisePrefixes = [
+        "<command-name>", "<local-command", "Caveat:", "<system-reminder>",
+    ]
+
+    private static func isNoise(_ text: String) -> Bool {
+        noisePrefixes.contains { text.hasPrefix($0) }
+    }
+
+    /// Extract the user's actual prompt text from a message payload, which
+    /// may be a plain string or an array of content blocks (IDE sessions).
+    /// Returns nil when the message carries no real user text (tool results,
+    /// command wrappers, injected reminders).
+    private static func userText(from message: [String: Any]) -> String? {
+        if let text = message["content"] as? String {
+            return isNoise(text) ? nil : text
+        }
+        if let blocks = message["content"] as? [[String: Any]] {
+            for block in blocks {
+                guard block["type"] as? String == "text",
+                      let text = block["text"] as? String,
+                      !text.isEmpty,
+                      !isNoise(text)
+                else { continue }
+                return text
+            }
+        }
+        return nil
     }
 
     /// Format tool input for display in instance list

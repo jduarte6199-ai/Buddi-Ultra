@@ -67,6 +67,11 @@ struct SessionPopupBubble: View {
                 }
             }
             .frame(maxWidth: 250, alignment: .leading)
+            .contentShape(Rectangle())
+            // On approval bubbles the text area is the only jump target.
+            .onTapGesture {
+                if isApproval { onOpen() }
+            }
 
             if isApproval {
                 HStack(spacing: 6) {
@@ -88,7 +93,13 @@ struct SessionPopupBubble: View {
         )
         .fixedSize()
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .onTapGesture { onOpen() }
+        // Ready bubbles are one big tap target. Approval bubbles are NOT:
+        // a near-miss on the small approve/deny buttons must not steal the
+        // click, jump apps, and dismiss an undecided permission. There the
+        // text area alone jumps to the session.
+        .onTapGesture {
+            if !isApproval { onOpen() }
+        }
         .onHover { hovering = $0 }
         .help(popup.title)
         .onAppear { bounce.toggle() }

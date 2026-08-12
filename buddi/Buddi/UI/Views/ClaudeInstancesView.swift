@@ -88,26 +88,7 @@ struct ClaudeInstancesView: View {
     // MARK: - Actions
 
     private func focusSession(_ session: SessionState) {
-        // Sessions outside a multiplexer (e.g. VS Code's integrated terminal)
-        // are focused by bringing their host app to the front.
-        guard session.isInMultiplexer else {
-            SessionAppFocuser.focusHostApp(of: session)
-            return
-        }
-
-        Task {
-            let focused: Bool
-            if let pid = session.pid {
-                focused = await YabaiController.shared.focusWindow(forClaudePid: pid)
-            } else {
-                focused = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
-            }
-            // Without yabai (or if it misses), fall back to raising the
-            // session's host app directly.
-            if !focused {
-                SessionAppFocuser.focusHostApp(of: session)
-            }
-        }
+        SessionAppFocuser.focus(session)
     }
 
     private func openChat(_ session: SessionState) {
@@ -154,6 +135,12 @@ struct InstanceRow: View {
     private var isInteractiveTool: Bool {
         guard let toolName = session.pendingToolName else { return false }
         return toolName == "AskUserQuestion"
+    }
+
+    /// Whether a jump-to-session route exists: yabai for multiplexer
+    /// sessions, host-app raise (needs a pid) for everything else.
+    private var canFocusSession: Bool {
+        session.isInMultiplexer ? isYabaiAvailable : session.pid != nil
     }
 
     var body: some View {
@@ -259,10 +246,12 @@ struct InstanceRow: View {
                     }
 
                     // Jump to the session: tmux window via yabai, or the host
-                    // app (VS Code, Terminal, ...) via its pid.
-                    if isYabaiAvailable || session.pid != nil {
+                    // app (VS Code, Terminal, ...) via its pid. Hidden for
+                    // multiplexer sessions without yabai, where neither route
+                    // can reach the right window.
+                    if canFocusSession {
                         TerminalButton(
-                            isEnabled: session.isInMultiplexer || session.pid != nil,
+                            isEnabled: true,
                             onTap: { onFocus() }
                         )
                     }
@@ -277,7 +266,7 @@ struct InstanceRow: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else {
                 HStack(spacing: 8) {
-                    if (session.isInMultiplexer && isYabaiAvailable) || session.pid != nil {
+                    if canFocusSession {
                         IconButton(icon: "eye") {
                             onFocus()
                         }

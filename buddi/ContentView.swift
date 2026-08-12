@@ -213,24 +213,31 @@ struct ContentView: View {
             if coordinator.sessionDonePopup.show && vm.notchState == .closed
                 && !coordinator.helloAnimationRunning
             {
+                // Snapshot the rendered popup so every action targets exactly
+                // what the user saw, even if the slot is overwritten mid-click.
+                let popup = coordinator.sessionDonePopup
                 SessionPopupBubble(
-                    popup: coordinator.sessionDonePopup,
+                    popup: popup,
                     onOpen: {
-                        let popup = coordinator.sessionDonePopup
                         if let session = BuddiSessionBridge.shared.sessionMonitor.instances
                             .first(where: { $0.sessionId == popup.sessionId }) {
-                            SessionAppFocuser.focusHostApp(of: session)
+                            SessionAppFocuser.focus(session)
                         }
                         coordinator.hideSessionDonePopup()
                     },
                     onApprove: {
-                        BuddiSessionBridge.shared.sessionMonitor
-                            .approvePermission(sessionId: coordinator.sessionDonePopup.sessionId)
+                        BuddiSessionBridge.shared.sessionMonitor.approvePermission(
+                            sessionId: popup.sessionId,
+                            expectedToolUseId: popup.toolUseId
+                        )
                         coordinator.hideSessionDonePopup()
                     },
                     onDeny: {
-                        BuddiSessionBridge.shared.sessionMonitor
-                            .denyPermission(sessionId: coordinator.sessionDonePopup.sessionId, reason: nil)
+                        BuddiSessionBridge.shared.sessionMonitor.denyPermission(
+                            sessionId: popup.sessionId,
+                            reason: nil,
+                            expectedToolUseId: popup.toolUseId
+                        )
                         coordinator.hideSessionDonePopup()
                     }
                 )
@@ -407,10 +414,12 @@ struct ContentView: View {
                         // swiping left slides the content left and reveals the tab
                         // on the right (Pet → Music → Shelf); swiping right goes
                         // back. Over the music box the same mapping skips tracks.
-                        .panGesture(direction: .left, threshold: 30) { _, phase in
+                        // Strict axis dominance so a diagonal reading-scroll
+                        // inside the chat can't accidentally switch tabs.
+                        .panGesture(direction: .left, threshold: 40, axisDominance: 2.5) { _, phase in
                             handleHorizontalSwipe(forward: true, phase: phase)
                         }
-                        .panGesture(direction: .right, threshold: 30) { _, phase in
+                        .panGesture(direction: .right, threshold: 40, axisDominance: 2.5) { _, phase in
                             handleHorizontalSwipe(forward: false, phase: phase)
                         }
                 }
@@ -617,9 +626,10 @@ struct ContentView: View {
 
     private func handleDownGesture(translation: CGFloat, phase: NSEvent.Phase) {
         // Over the music box on the open panel, swipe down = previous media
-        // source (mirror of the swipe-up handler).
+        // source (mirror of the swipe-up handler: end of gesture, 30pt min).
         if vm.notchState == .open {
-            if coordinator.currentView == .home && vm.isHoveringMusicPlayer && phase == .began {
+            if coordinator.currentView == .home && vm.isHoveringMusicPlayer,
+               phase == .ended, translation >= 30 {
                 MusicManager.shared.cycleMediaSource(forward: false)
                 if Defaults[.enableHaptics] {
                     haptics.toggle()
@@ -655,9 +665,11 @@ struct ContentView: View {
 
         // Over the music box a vertical swipe cycles the media source
         // (Now Playing / Apple Music / Spotify / YouTube Music) instead of
-        // closing the notch. Swipe up = next source.
+        // closing the notch. Swipe up = next source. Fires once per gesture,
+        // at gesture end, and only past a real travel threshold so a 4pt
+        // trackpad drift can't hop sources.
         if coordinator.currentView == .home && vm.isHoveringMusicPlayer {
-            if phase == .began {
+            if phase == .ended && translation >= 30 {
                 MusicManager.shared.cycleMediaSource(forward: true)
                 if Defaults[.enableHaptics] {
                     haptics.toggle()
@@ -773,10 +785,16 @@ extension ContentView {
         let notchContentHeight = max(0, vm.effectiveClosedNotchHeight - (isHovering ? 0 : 12))
         let sideWidth = max(0, vm.effectiveClosedNotchHeight - 12) + 10
         let centerWidth = vm.closedNotchSize.width + (isHovering ? 8 : 0)
+        // Single pass: this view re-renders on every instances publish.
         let sessions = BuddiSessionBridge.shared.sessionMonitor.instances
-        let isProcessing = sessions.contains { $0.phase.isActive }
-        let hasPending = sessions.contains { $0.phase.isWaitingForApproval }
-        let waitingCount = sessions.filter { $0.phase == .waitingForInput }.count
+        var isProcessing = false
+        var hasPending = false
+        var waitingCount = 0
+        for session in sessions {
+            if session.phase.isActive { isProcessing = true }
+            if session.phase.isWaitingForApproval { hasPending = true }
+            if session.phase == .waitingForInput { waitingCount += 1 }
+        }
         let hasWaiting = waitingCount > 0
 
         return HStack(spacing: 0) {

@@ -18,7 +18,7 @@ enum PanDirection {
 }
 
 extension View {
-    func panGesture(direction: PanDirection, threshold: CGFloat = 4, action: @escaping (CGFloat, NSEvent.Phase) -> Void) -> some View {
+    func panGesture(direction: PanDirection, threshold: CGFloat = 4, axisDominance: CGFloat = 1.5, action: @escaping (CGFloat, NSEvent.Phase) -> Void) -> some View {
         self
             .gesture(
                 DragGesture(minimumDistance: 0)
@@ -29,13 +29,14 @@ extension View {
                     }
                     .onEnded { _ in action(0, .ended) }
             )
-            .background(ScrollMonitor(direction: direction, threshold: threshold, action: action))
+            .background(ScrollMonitor(direction: direction, threshold: threshold, axisDominance: axisDominance, action: action))
     }
 }
 
 private struct ScrollMonitor: NSViewRepresentable {
     let direction: PanDirection
     let threshold: CGFloat
+    let axisDominance: CGFloat
     let action: (CGFloat, NSEvent.Phase) -> Void
 
     func makeNSView(context: Context) -> NSView {
@@ -46,13 +47,14 @@ private struct ScrollMonitor: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
     static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) { coordinator.removeMonitor() }
 
-    func makeCoordinator() -> Coordinator { 
-        Coordinator(direction: direction, threshold: threshold, action: action) 
+    func makeCoordinator() -> Coordinator {
+        Coordinator(direction: direction, threshold: threshold, axisDominance: axisDominance, action: action)
     }
 
     @MainActor final class Coordinator: NSObject {
         private let direction: PanDirection
         private let threshold: CGFloat
+        private let axisDominance: CGFloat
         private let action: (CGFloat, NSEvent.Phase) -> Void
         private var monitor: Any?
         private var accumulated: CGFloat = 0
@@ -60,9 +62,10 @@ private struct ScrollMonitor: NSViewRepresentable {
             private var endTask: Task<Void, Never>?
         private let noiseThreshold: CGFloat = 0.2
 
-        init(direction: PanDirection, threshold: CGFloat, action: @escaping (CGFloat, NSEvent.Phase) -> Void) {
+        init(direction: PanDirection, threshold: CGFloat, axisDominance: CGFloat, action: @escaping (CGFloat, NSEvent.Phase) -> Void) {
             self.direction = direction
             self.threshold = threshold
+            self.axisDominance = axisDominance
             self.action = action
         }
 
@@ -73,14 +76,22 @@ private struct ScrollMonitor: NSViewRepresentable {
                 // If no new scroll event arrives within this window, consider the gesture ended.
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
-                if active {
-                    action(accumulated.magnitude, .ended)
-                } else {
-                    action(0, .ended)
-                }
-                active = false
-                accumulated = 0
+                self.endGesture()
             }
+        }
+
+        /// Single exit path: emits the ended callback exactly once and fully
+        /// resets, so no stale timeout can fire a phantom ended later.
+        private func endGesture() {
+            if active {
+                action(accumulated.magnitude, .ended)
+            } else {
+                action(0, .ended)
+            }
+            active = false
+            accumulated = 0
+            endTask?.cancel()
+            endTask = nil
         }
 
         func installMonitor(on view: NSView) {
@@ -104,35 +115,34 @@ private struct ScrollMonitor: NSViewRepresentable {
         }
 
         private func handleScroll(_ event: NSEvent) {
-            // Momentum (inertia) events arrive after the fingers lift and would
-            // re-trigger the gesture several times per physical swipe. Only track
-            // finger-driven events; any momentum event just closes the gesture.
-            if event.momentumPhase != [] {
-                if active {
-                    action(accumulated.magnitude, .ended)
-                }
-                active = false
-                accumulated = 0
-                endTask?.cancel()
+            let isMomentum = event.momentumPhase != []
+
+            // Inertia may EXTEND a live gesture (that is what makes a quick
+            // flick reach the open/close sensitivity) but must never START
+            // one: momentum re-accumulating from zero after finger lift was
+            // what made one physical swipe fire several times.
+            if isMomentum && !active && accumulated == 0 {
                 return
             }
-            if event.phase == .ended || event.phase == .cancelled {
-                if active {
-                    action(accumulated.magnitude, .ended)
-                } else {
-                    action(0, .ended)
-                }
-                active = false
-                accumulated = 0
+
+            if event.phase == .cancelled || event.momentumPhase == .ended {
+                endGesture()
+                return
+            }
+
+            if event.phase == .ended {
+                // Fingers lifted: keep the gesture alive briefly so inertia
+                // (or the idle timeout) finishes it.
+                scheduleEndTimeout()
                 return
             }
 
             // Only consider scroll events that are primarily along the configured axis.
             let absDX = abs(event.scrollingDeltaX)
             let absDY = abs(event.scrollingDeltaY)
-            // Require the movement along the gesture axis to be at least 1.5x the orthogonal axis.
-            let axisDominanceFactor: CGFloat = 1.5
-            let isAxisDominant: Bool = direction.isHorizontal ? (absDX >= axisDominanceFactor * absDY) : (absDY >= axisDominanceFactor * absDX)
+            // Require the movement along the gesture axis to dominate the
+            // orthogonal axis by the configured factor.
+            let isAxisDominant: Bool = direction.isHorizontal ? (absDX >= axisDominance * absDY) : (absDY >= axisDominance * absDX)
             guard isAxisDominant else { return }
 
             // Scale non-precise (mouse wheel) scrolling deltas so they feel similar to

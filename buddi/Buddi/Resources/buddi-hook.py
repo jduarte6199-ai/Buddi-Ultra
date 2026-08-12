@@ -253,8 +253,12 @@ def main():
         state["status"] = "waiting_for_input"
 
     elif event == "SubagentStop":
-        # SubagentStop fires when a subagent completes - usually means back to waiting
-        state["status"] = "waiting_for_input"
+        # SubagentStop fires when a subagent completes, but the MAIN agent is
+        # still working (it spawned the subagent mid-turn). Reporting
+        # waiting_for_input here made the session phase flap on every
+        # subagent completion, spamming "chat ready" notifications mid-run.
+        # The real turn boundary is the Stop event; ignore this one.
+        sys.exit(0)
 
     elif event == "SessionStart":
         # New session starts waiting for user input

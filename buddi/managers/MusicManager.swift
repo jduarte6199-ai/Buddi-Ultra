@@ -156,12 +156,23 @@ class MusicManager: ObservableObject {
             types.removeAll { $0 == .nowPlaying }
         }
         guard !types.isEmpty else { return }
-        let current = Defaults[.mediaController]
+        // Resolve the stored preference the same way activation does, so the
+        // cycle starts from the controller actually in use.
+        var current = Defaults[.mediaController]
+        if isNowPlayingDeprecated && current == .nowPlaying {
+            current = .appleMusic
+        }
         let index = types.firstIndex(of: current) ?? 0
-        let step = forward ? 1 : types.count - 1
-        Defaults[.mediaController] = types[(index + step) % types.count]
+        let step = forward ? 1 : -1
+        Defaults[.mediaController] = types[(index + step + types.count) % types.count]
         NotificationCenter.default.post(name: Notification.Name.mediaControllerChanged, object: nil)
     }
+
+    /// Effective type of the controller currently active; used to skip
+    /// redundant teardown/rebuild when the preference "changes" to the same
+    /// value (e.g. the swipe writes Defaults AND Settings re-posts the change
+    /// notification for the same write).
+    private var currentControllerType: MediaControllerType?
 
     private func setActiveControllerBasedOnPreference() {
         let preferredType = Defaults[.mediaController]
@@ -172,10 +183,16 @@ class MusicManager: ObservableObject {
             ? .appleMusic
             : preferredType
 
+        if controllerType == currentControllerType, activeController != nil {
+            return
+        }
+        currentControllerType = controllerType
+
         if let controller = createController(for: controllerType) {
             setActiveController(controller)
         } else if controllerType != .appleMusic, let fallbackController = createController(for: .appleMusic) {
             // Fallback to Apple Music if preferred controller couldn't be created
+            currentControllerType = .appleMusic
             setActiveController(fallbackController)
         }
     }

@@ -13,9 +13,10 @@ struct BuddiHeader: View {
     @ObservedObject var coordinator = BuddiViewCoordinator.shared
     @StateObject var tvm = ShelfStateViewModel.shared
 
-    private var isLoomInstalled: Bool {
-        FileManager.default.fileExists(atPath: "/Applications/Loom.app")
-    }
+    // Resolved once per launch (render path must not touch the disk), and by
+    // bundle id so any install location (/Applications, ~/Applications) works.
+    private static let loomURL: URL? =
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.loom.desktop")
 
     var body: some View {
         HStack(spacing: 0) {
@@ -64,11 +65,9 @@ struct BuddiHeader: View {
                         }
                         // Quick Loom: raises the Loom recorder so a recording
                         // is one click away. Only shown when Loom is installed.
-                        if isLoomInstalled {
+                        if let loomURL = Self.loomURL {
                             Button(action: {
-                                NSWorkspace.shared.open(
-                                    URL(fileURLWithPath: "/Applications/Loom.app")
-                                )
+                                NSWorkspace.shared.open(loomURL)
                             }) {
                                 Capsule()
                                     .fill(.black)

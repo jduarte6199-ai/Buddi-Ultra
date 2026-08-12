@@ -76,10 +76,16 @@ class ClaudeSessionMonitor: ObservableObject {
 
     // MARK: - Permission Handling
 
-    func approvePermission(sessionId: String) {
+    func approvePermission(sessionId: String, expectedToolUseId: String? = nil) {
         Task {
             guard let session = await SessionStore.shared.session(for: sessionId),
                   let permission = session.activePermission else {
+                return
+            }
+
+            // A caller that displayed a specific tool (e.g. the notch popup)
+            // must never approve a permission that replaced it meanwhile.
+            if let expectedToolUseId, permission.toolUseId != expectedToolUseId {
                 return
             }
 
@@ -94,10 +100,14 @@ class ClaudeSessionMonitor: ObservableObject {
         }
     }
 
-    func denyPermission(sessionId: String, reason: String?) {
+    func denyPermission(sessionId: String, reason: String?, expectedToolUseId: String? = nil) {
         Task {
             guard let session = await SessionStore.shared.session(for: sessionId),
                   let permission = session.activePermission else {
+                return
+            }
+
+            if let expectedToolUseId, permission.toolUseId != expectedToolUseId {
                 return
             }
 

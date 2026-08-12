@@ -2,14 +2,38 @@
 //  SessionAppFocuser.swift
 //  Buddi
 //
-//  Brings the app hosting a Claude session (VS Code, Terminal, iTerm, ...)
-//  to the front by walking the session's process ancestry up to the first
-//  regular GUI application.
+//  Single entry point for "jump to this session": multiplexer sessions go
+//  through yabai window targeting first; everything else raises the GUI app
+//  hosting the session's process tree (VS Code, Terminal, iTerm, ...).
 //
 
 import AppKit
 
 enum SessionAppFocuser {
+    /// Editors that ship a `code`-style CLI able to raise the window that has
+    /// a given folder open. Checked in order inside Contents/Resources/app/bin.
+    private static let editorCLINames = ["code", "cursor", "codium", "windsurf"]
+
+    /// Unified jump-to-session used by the popup bubble and the instances
+    /// list, so both surfaces always land in the same place.
+    static func focus(_ session: SessionState) {
+        guard session.isInMultiplexer else {
+            focusHostApp(of: session)
+            return
+        }
+        Task {
+            let focused: Bool
+            if let pid = session.pid {
+                focused = await YabaiController.shared.focusWindow(forClaudePid: pid)
+            } else {
+                focused = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
+            }
+            if !focused {
+                focusHostApp(of: session)
+            }
+        }
+    }
+
     /// Focus the GUI app that owns a session's process (e.g. VS Code for
     /// sessions started from its integrated terminal or extension).
     static func focusHostApp(of session: SessionState) {
@@ -18,46 +42,56 @@ enum SessionAppFocuser {
         Task.detached(priority: .userInitiated) {
             let tree = ProcessTreeBuilder.shared.buildTree()
 
-            var pid = sessionPid
-            var hops = 0
-            var hostPid: Int?
-            while hops < 20, pid > 1, let info = tree[pid] {
-                if isGUIApp(pid: info.pid) {
-                    hostPid = info.pid
-                    break
+            // Prefer the shared terminal registry (same source of truth the
+            // focus-detection code uses), then fall back to the first regular
+            // GUI app in the ancestry.
+            var hostPid = ProcessTreeBuilder.shared.findTerminalPid(forProcess: sessionPid, tree: tree)
+            if hostPid == nil {
+                var pid = sessionPid
+                var hops = 0
+                while hops < 20, pid > 1, let info = tree[pid] {
+                    if let app = NSRunningApplication(processIdentifier: pid_t(info.pid)),
+                       app.activationPolicy == .regular {
+                        hostPid = info.pid
+                        break
+                    }
+                    pid = info.ppid
+                    hops += 1
                 }
-                pid = info.ppid
-                hops += 1
             }
 
             guard let hostPid else {
                 NSLog("[SessionAppFocuser] no GUI host found for session pid %d", sessionPid)
                 return
             }
-            let cwd = session.cwd
+
+            // For VS Code-style editors, `<cli> <folder>` raises the window
+            // that already has the project open. Use the project root (nearest
+            // ancestor with .git) so a session started in a subdirectory does
+            // not open a brand-new window on that subfolder.
+            let bundleInfo = await MainActor.run { () -> (bundleId: String?, bundleURL: URL?) in
+                guard let app = NSRunningApplication(processIdentifier: pid_t(hostPid)) else {
+                    return (nil, nil)
+                }
+                return (app.bundleIdentifier, app.bundleURL)
+            }
+
+            if let bundleURL = bundleInfo.bundleURL,
+               let cli = editorCLI(in: bundleURL) {
+                let process = Process()
+                process.executableURL = cli
+                process.arguments = [projectRoot(for: session.cwd)]
+                do {
+                    try process.run()
+                } catch {
+                    NSLog("[SessionAppFocuser] editor CLI failed: %@", "\(error)")
+                }
+            }
+
             await MainActor.run {
                 guard let app = NSRunningApplication(processIdentifier: pid_t(hostPid)) else { return }
                 NSLog("[SessionAppFocuser] focusing %@ (pid %d) for cwd %@",
-                      app.bundleIdentifier ?? "?", hostPid, cwd)
-
-                // For VS Code, `code <folder>` reuses (and raises) the window
-                // that already has the session's project open, so we land on
-                // the right window instead of just the last-used one.
-                if let bundleId = app.bundleIdentifier,
-                   bundleId.hasPrefix("com.microsoft.VSCode"),
-                   let cliURL = app.bundleURL?
-                       .appendingPathComponent("Contents/Resources/app/bin/code"),
-                   FileManager.default.fileExists(atPath: cliURL.path)
-                {
-                    let process = Process()
-                    process.executableURL = cliURL
-                    process.arguments = [cwd]
-                    do {
-                        try process.run()
-                    } catch {
-                        NSLog("[SessionAppFocuser] code CLI failed: %@", "\(error)")
-                    }
-                }
+                      app.bundleIdentifier ?? "?", hostPid, session.cwd)
 
                 // The notch overlay never becomes the active app, so a plain
                 // activate() is dropped by macOS cooperative activation.
@@ -81,10 +115,29 @@ enum SessionAppFocuser {
         }
     }
 
-    private nonisolated static func isGUIApp(pid: Int) -> Bool {
-        guard let app = NSRunningApplication(processIdentifier: pid_t(pid)) else {
-            return false
+    /// Locate a `code`-style CLI inside an editor bundle, if any.
+    private nonisolated static func editorCLI(in bundleURL: URL) -> URL? {
+        let binDir = bundleURL.appendingPathComponent("Contents/Resources/app/bin")
+        for name in editorCLINames {
+            let candidate = binDir.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: candidate.path) {
+                return candidate
+            }
         }
-        return app.activationPolicy == .regular
+        return nil
+    }
+
+    /// Nearest ancestor of cwd containing .git (max 5 hops), else cwd itself.
+    private nonisolated static func projectRoot(for cwd: String) -> String {
+        var dir = URL(fileURLWithPath: cwd)
+        for _ in 0..<5 {
+            if FileManager.default.fileExists(atPath: dir.appendingPathComponent(".git").path) {
+                return dir.path
+            }
+            let parent = dir.deletingLastPathComponent()
+            if parent.path == dir.path { break }
+            dir = parent
+        }
+        return cwd
     }
 }

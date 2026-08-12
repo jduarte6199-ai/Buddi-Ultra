@@ -467,6 +467,14 @@ struct NotchHomeView: View {
         }
         .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
         .blur(radius: vm.notchState == .closed ? 30 : 0)
+        // SwiftUI does not reliably deliver onHover(false) when the view is
+        // torn down (e.g. the notch closes programmatically with the cursor
+        // over the music box), so reset the gesture-routing flags here or
+        // they stay stuck true and misroute every later swipe.
+        .onDisappear {
+            vm.isHoveringMusicPlayer = false
+            vm.isHoveringCalendar = false
+        }
     }
 }
 

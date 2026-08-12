@@ -66,6 +66,15 @@ struct SessionDonePopup {
     var kind: SessionPopupKind = .ready
     /// One-line context: last assistant message or pending tool input.
     var detail: String = ""
+    /// For approval popups: the exact permission this popup displays. The
+    /// approve/deny actions are pinned to it so they can never act on a
+    /// permission that replaced this one while the popup was on screen.
+    var toolUseId: String = ""
+
+    var isApproval: Bool {
+        if case .approval = kind { return true }
+        return false
+    }
 }
 
 @MainActor
@@ -300,35 +309,56 @@ class BuddiViewCoordinator: ObservableObject {
 
     @Published var sessionDonePopup: SessionDonePopup = .init()
     private var sessionDonePopupTask: Task<Void, Never>?
+    /// Events that arrived while another popup was on screen; drained FIFO.
+    private var sessionPopupQueue: [SessionDonePopup] = []
+    private let sessionPopupQueueLimit = 5
 
     /// Show a session banner on the closed notch, auto-hiding after a few
     /// seconds (approval popups linger longer so there is time to act).
-    /// The bouncy spring gives it the AirPods-connect pop.
+    /// A live approval popup is never replaced by a ready banner; lower
+    /// priority events queue up and show when the slot frees.
     func showSessionPopup(
         kind: SessionPopupKind,
         title: String,
         projectName: String,
         sessionId: String,
-        detail: String = ""
+        detail: String = "",
+        toolUseId: String = ""
     ) {
+        let popup = SessionDonePopup(
+            show: true,
+            title: title,
+            projectName: projectName,
+            sessionId: sessionId,
+            kind: kind,
+            detail: detail,
+            toolUseId: toolUseId
+        )
+
+        if sessionDonePopup.show {
+            if popup.isApproval && !sessionDonePopup.isApproval {
+                // Approvals outrank ready banners: requeue the current one.
+                sessionPopupQueue.insert(sessionDonePopup, at: 0)
+                presentSessionPopup(popup)
+            } else if sessionPopupQueue.count < sessionPopupQueueLimit {
+                sessionPopupQueue.append(popup)
+            }
+            return
+        }
+
+        presentSessionPopup(popup)
+    }
+
+    private func presentSessionPopup(_ popup: SessionDonePopup) {
         sessionDonePopupTask?.cancel()
         withAnimation(.spring(response: 0.45, dampingFraction: 0.6)) {
-            sessionDonePopup = SessionDonePopup(
-                show: true,
-                title: title,
-                projectName: projectName,
-                sessionId: sessionId,
-                kind: kind,
-                detail: detail
-            )
+            sessionDonePopup = popup
         }
-        let duration: TimeInterval = (kind == .ready) ? 5 : 12
+        let duration: TimeInterval = popup.isApproval ? 12 : 5
         sessionDonePopupTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(duration))
             guard let self = self, !Task.isCancelled else { return }
-            withAnimation(.smooth) {
-                self.sessionDonePopup.show = false
-            }
+            self.hideSessionDonePopup()
         }
     }
 
@@ -336,6 +366,26 @@ class BuddiViewCoordinator: ObservableObject {
         sessionDonePopupTask?.cancel()
         withAnimation(.smooth) {
             sessionDonePopup.show = false
+        }
+        guard !sessionPopupQueue.isEmpty else { return }
+        let next = sessionPopupQueue.removeFirst()
+        // Let the hide animation settle before the next bubble drops in.
+        sessionDonePopupTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard let self = self, !Task.isCancelled else { return }
+            self.presentSessionPopup(next)
+        }
+    }
+
+    /// Drop approval popups (visible or queued) whose permission has been
+    /// resolved elsewhere (terminal, chat panel, another Buddi surface).
+    func invalidateApprovalPopups(stillPending: Set<String>) {
+        sessionPopupQueue.removeAll { popup in
+            popup.isApproval && !stillPending.contains(popup.toolUseId)
+        }
+        if sessionDonePopup.show, sessionDonePopup.isApproval,
+           !stillPending.contains(sessionDonePopup.toolUseId) {
+            hideSessionDonePopup()
         }
     }
 

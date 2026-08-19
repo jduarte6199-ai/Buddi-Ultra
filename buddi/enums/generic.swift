@@ -27,6 +27,7 @@ public enum NotchViews {
     case buddy
     case home
     case shelf
+    case inbox
 }
 
 enum SettingsEnum {

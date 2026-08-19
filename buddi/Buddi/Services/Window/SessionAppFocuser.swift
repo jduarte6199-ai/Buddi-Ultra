@@ -42,22 +42,24 @@ enum SessionAppFocuser {
         Task.detached(priority: .userInitiated) {
             let tree = ProcessTreeBuilder.shared.buildTree()
 
-            // Prefer the shared terminal registry (same source of truth the
-            // focus-detection code uses), then fall back to the first regular
-            // GUI app in the ancestry.
-            var hostPid = ProcessTreeBuilder.shared.findTerminalPid(forProcess: sessionPid, tree: tree)
-            if hostPid == nil {
+            // Walk to the first REAL GUI app in the ancestry. Deliberately not
+            // TerminalAppRegistry here: its substring matching ("code") hits
+            // the claude CLI path (~/.vscode/extensions/...claude-code...) and
+            // the "Code Helper" processes, none of which can be activated, so
+            // the jump would silently no-op. NSRunningApplication + .regular
+            // is the ground truth for "something we can raise".
+            let hostPid: Int? = await MainActor.run {
                 var pid = sessionPid
                 var hops = 0
                 while hops < 20, pid > 1, let info = tree[pid] {
                     if let app = NSRunningApplication(processIdentifier: pid_t(info.pid)),
                        app.activationPolicy == .regular {
-                        hostPid = info.pid
-                        break
+                        return info.pid
                     }
                     pid = info.ppid
                     hops += 1
                 }
+                return nil
             }
 
             guard let hostPid else {
@@ -69,15 +71,11 @@ enum SessionAppFocuser {
             // that already has the project open. Use the project root (nearest
             // ancestor with .git) so a session started in a subdirectory does
             // not open a brand-new window on that subfolder.
-            let bundleInfo = await MainActor.run { () -> (bundleId: String?, bundleURL: URL?) in
-                guard let app = NSRunningApplication(processIdentifier: pid_t(hostPid)) else {
-                    return (nil, nil)
-                }
-                return (app.bundleIdentifier, app.bundleURL)
+            let bundleURL = await MainActor.run {
+                NSRunningApplication(processIdentifier: pid_t(hostPid))?.bundleURL
             }
 
-            if let bundleURL = bundleInfo.bundleURL,
-               let cli = editorCLI(in: bundleURL) {
+            if let bundleURL, let cli = editorCLI(in: bundleURL) {
                 let process = Process()
                 process.executableURL = cli
                 process.arguments = [projectRoot(for: session.cwd)]

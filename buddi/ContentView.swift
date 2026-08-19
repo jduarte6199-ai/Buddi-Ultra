@@ -396,6 +396,8 @@ struct ContentView: View {
                         BuddyTabView()
                     case .home:
                         NotchHomeView(albumArtNamespace: albumArtNamespace)
+                    case .inbox:
+                        InboxView()
                     case .shelf:
                         ShelfView()
                     }

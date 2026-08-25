@@ -15,6 +15,8 @@ struct SessionPopupBubble: View {
     let onOpen: () -> Void
     let onApprove: () -> Void
     let onDeny: () -> Void
+    /// AskUserQuestion quick-reply: called with the chosen option label.
+    var onSelectOption: ((String) -> Void)? = nil
 
     @State private var bounce = false
     @State private var hovering = false
@@ -24,8 +26,23 @@ struct SessionPopupBubble: View {
         return false
     }
 
+    private var isMeeting: Bool {
+        popup.kind == .meeting
+    }
+
+    /// Question popups replace approve/deny with their option buttons.
+    private var showsQuickReplies: Bool {
+        isApproval && !popup.options.isEmpty
+    }
+
     private var accent: Color {
-        isApproval ? TerminalColors.amber : .green
+        if isMeeting { return Color(red: 0.35, green: 0.55, blue: 1.0) }
+        return isApproval ? TerminalColors.amber : .green
+    }
+
+    private var iconName: String {
+        if isMeeting { return "calendar.circle.fill" }
+        return isApproval ? "hand.raised.circle.fill" : "checkmark.circle.fill"
     }
 
     /// Secondary line: project (when the title is a real chat name), the tool
@@ -45,8 +62,55 @@ struct SessionPopupBubble: View {
     }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            mainRow
+            if showsQuickReplies {
+                quickReplyRow
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.black)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(Color.white.opacity(hovering ? 0.25 : 0.12), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.65), radius: 12, y: 5)
+        )
+        .fixedSize()
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        // Ready and meeting bubbles are one big tap target. Approval bubbles
+        // are NOT: a near-miss on the small buttons must not steal the click.
+        .onTapGesture {
+            if !isApproval { onOpen() }
+        }
+        .onHover { hovering = $0 }
+        .help(popup.title)
+        .onAppear { bounce.toggle() }
+    }
+
+    private var quickReplyRow: some View {
+        HStack(spacing: 6) {
+            ForEach(popup.options, id: \.self) { option in
+                Button(option) {
+                    onSelectOption?(option)
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.white.opacity(0.14)))
+                .overlay(Capsule().stroke(accent.opacity(0.5), lineWidth: 1))
+            }
+        }
+    }
+
+    private var mainRow: some View {
         HStack(spacing: 10) {
-            Image(systemName: isApproval ? "hand.raised.circle.fill" : "checkmark.circle.fill")
+            Image(systemName: iconName)
                 .font(.system(size: 24))
                 .foregroundStyle(accent)
                 .symbolEffect(.bounce, value: bounce)
@@ -73,36 +137,13 @@ struct SessionPopupBubble: View {
                 if isApproval { onOpen() }
             }
 
-            if isApproval {
+            if isApproval && !showsQuickReplies {
                 HStack(spacing: 6) {
                     BubbleActionButton(icon: "checkmark", color: .green, action: onApprove)
                     BubbleActionButton(icon: "xmark", color: .red, action: onDeny)
                 }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(.black)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.white.opacity(hovering ? 0.25 : 0.12), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.65), radius: 12, y: 5)
-        )
-        .fixedSize()
-        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        // Ready bubbles are one big tap target. Approval bubbles are NOT:
-        // a near-miss on the small approve/deny buttons must not steal the
-        // click, jump apps, and dismiss an undecided permission. There the
-        // text area alone jumps to the session.
-        .onTapGesture {
-            if !isApproval { onOpen() }
-        }
-        .onHover { hovering = $0 }
-        .help(popup.title)
-        .onAppear { bounce.toggle() }
     }
 }
 

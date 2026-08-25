@@ -18,6 +18,19 @@ struct BuddiHeader: View {
     private static let loomURL: URL? =
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.loom.desktop")
 
+    /// Posts cmd+shift+L (Loom's default start/stop recording shortcut).
+    /// Requires the Accessibility permission to inject events.
+    private static func postLoomRecordShortcut() {
+        let source = CGEventSource(stateID: .hidSystemState)
+        let keyL: CGKeyCode = 37
+        let down = CGEvent(keyboardEventSource: source, virtualKey: keyL, keyDown: true)
+        let up = CGEvent(keyboardEventSource: source, virtualKey: keyL, keyDown: false)
+        down?.flags = [.maskCommand, .maskShift]
+        up?.flags = [.maskCommand, .maskShift]
+        down?.post(tap: .cghidEventTap)
+        up?.post(tap: .cghidEventTap)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             HStack {
@@ -68,6 +81,15 @@ struct BuddiHeader: View {
                         if let loomURL = Self.loomURL {
                             Button(action: {
                                 NSWorkspace.shared.open(loomURL)
+                                // With Accessibility granted, fire Loom's
+                                // global shortcut (default cmd+shift+L) so
+                                // one click starts the recording; without
+                                // the permission, the recorder just opens.
+                                if AXIsProcessTrusted() {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                                        Self.postLoomRecordShortcut()
+                                    }
+                                }
                             }) {
                                 Capsule()
                                     .fill(.black)

@@ -67,6 +67,15 @@ enum SessionAppFocuser {
                 return
             }
 
+            let projectFolder = URL(fileURLWithPath: projectRoot(for: session.cwd)).lastPathComponent
+
+            // With Accessibility granted, raise the exact window whose title
+            // carries the project folder; works for any host app and never
+            // opens new windows. Silently skipped without the permission.
+            let raisedViaAX = await MainActor.run {
+                raiseWindowViaAX(hostPid: hostPid, matching: projectFolder)
+            }
+
             // For VS Code-style editors, `<cli> <folder>` raises the window
             // that already has the project open. Use the project root (nearest
             // ancestor with .git) so a session started in a subdirectory does
@@ -75,7 +84,7 @@ enum SessionAppFocuser {
                 NSRunningApplication(processIdentifier: pid_t(hostPid))?.bundleURL
             }
 
-            if let bundleURL, let cli = editorCLI(in: bundleURL) {
+            if !raisedViaAX, let bundleURL, let cli = editorCLI(in: bundleURL) {
                 let process = Process()
                 process.executableURL = cli
                 process.arguments = [projectRoot(for: session.cwd)]
@@ -111,6 +120,32 @@ enum SessionAppFocuser {
                 }
             }
         }
+    }
+
+    /// Raise the host app window whose title mentions the project folder.
+    /// Needs the Accessibility permission (System Settings > Privacy &
+    /// Security > Accessibility > Buddi); returns false when not granted or
+    /// no window matches.
+    @MainActor
+    private static func raiseWindowViaAX(hostPid: Int, matching folderName: String) -> Bool {
+        guard AXIsProcessTrusted(), !folderName.isEmpty else { return false }
+        let app = AXUIElementCreateApplication(pid_t(hostPid))
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement]
+        else { return false }
+
+        for window in windows {
+            var titleRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef) == .success,
+                  let title = titleRef as? String,
+                  title.localizedCaseInsensitiveContains(folderName)
+            else { continue }
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+            NSLog("[SessionAppFocuser] raised window via AX: %@", title)
+            return true
+        }
+        return false
     }
 
     /// Locate a `code`-style CLI inside an editor bundle, if any.

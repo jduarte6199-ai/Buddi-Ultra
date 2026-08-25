@@ -65,6 +65,8 @@ struct BuddyTabView: View {
                         }
                     }
                 }
+
+                MemoryUsageBars()
             }
             .frame(width: 100)
 
@@ -140,6 +142,58 @@ struct BuddyTabView: View {
         guard hovering != isSuppressing else { return }
         isSuppressing = hovering
         vm.setScrollGestureSuppression(hovering, token: suppressionToken)
+    }
+}
+
+/// RAM and swap pressure bars plus the zombie-session cleanup button. These
+/// are the numbers behind macOS's "out of application memory" dialog; the
+/// bars go amber/red well before that dialog would appear.
+private struct MemoryUsageBars: View {
+    @ObservedObject private var memory = MemoryStatsService.shared
+
+    private static let calm = Color(red: 0.35, green: 0.55, blue: 1.0)
+
+    var body: some View {
+        VStack(spacing: 3) {
+            UsageBar(
+                label: "RAM",
+                percent: memory.stats.ramUsed,
+                detail: "\(Int(memory.stats.ramUsed * 100))%",
+                color: barColor(memory.stats.ramUsed, warn: 0.7, critical: 0.85)
+            )
+            UsageBar(
+                label: "Swap",
+                percent: memory.stats.swapUsed,
+                detail: swapDetail,
+                color: barColor(memory.stats.swapUsed, warn: 0.6, critical: 0.85)
+            )
+            if memory.zombieSessionCount > 0 {
+                Button {
+                    memory.cleanZombieSessions()
+                } label: {
+                    Label(
+                        "Clean \(memory.zombieSessionCount) zombie\(memory.zombieSessionCount == 1 ? "" : "s")",
+                        systemImage: "trash"
+                    )
+                    .font(.caption2)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.orange)
+                .help("Terminate old Claude CLI processes no session is using")
+            }
+        }
+        .onAppear { memory.refresh() }
+    }
+
+    private func barColor(_ value: Double, warn: Double, critical: Double) -> Color {
+        value > critical ? .red : value > warn ? .yellow : Self.calm
+    }
+
+    private var swapDetail: String {
+        let total = Double(memory.stats.swapTotalBytes) / 1_073_741_824
+        guard total > 0 else { return "off" }
+        let used = Double(memory.stats.swapUsedBytes) / 1_073_741_824
+        return String(format: "%.1f/%.0fG", used, total)
     }
 }
 

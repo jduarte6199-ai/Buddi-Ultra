@@ -97,6 +97,11 @@ actor ConversationParser {
         return info
     }
 
+    /// Test seam: exposes the private JSONL parsing to the unit tests.
+    func parseContentForTesting(_ content: String) -> ConversationInfo {
+        parseContent(content)
+    }
+
     /// Parse JSONL content
     private func parseContent(_ content: String) -> ConversationInfo {
         let lines = content.components(separatedBy: "\n").filter { !$0.isEmpty }

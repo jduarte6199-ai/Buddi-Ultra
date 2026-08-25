@@ -16,6 +16,7 @@ struct InboxView: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 10) {
+                SessionActivitySection()
                 ForEach(InboxSource.allCases) { source in
                     InboxSection(
                         source: source,
@@ -29,6 +30,91 @@ struct InboxView: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .onAppear { viewModel.startPolling() }
+    }
+}
+
+/// History of notch popups (ready chats, approvals, meetings), so anything
+/// missed while away is still reviewable. Click jumps to the session when it
+/// is still alive.
+private struct SessionActivitySection: View {
+    @ObservedObject private var log = SessionEventLog.shared
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE h:mm a"
+        return formatter
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Claude activity")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if !log.events.isEmpty {
+                    Button("Clear") { log.clear() }
+                        .buttonStyle(.plain)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+
+            if log.events.isEmpty {
+                Text("No recent notifications")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            } else {
+                ForEach(log.events.prefix(12)) { event in
+                    HStack(spacing: 6) {
+                        Image(systemName: icon(for: event.kind))
+                            .font(.caption2)
+                            .foregroundStyle(color(for: event.kind))
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(event.title)
+                                .font(.caption)
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                            Text("\(event.projectName) · \(Self.timeFormatter.string(from: event.date))")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        if let session = BuddiSessionBridge.shared.sessionMonitor.instances
+                            .first(where: { $0.sessionId == event.sessionId }) {
+                            SessionAppFocuser.focus(session)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
+    }
+
+    private func icon(for kind: String) -> String {
+        switch kind {
+        case "approval": return "hand.raised.fill"
+        case "meeting": return "calendar"
+        default: return "checkmark.circle.fill"
+        }
+    }
+
+    private func color(for kind: String) -> Color {
+        switch kind {
+        case "approval": return TerminalColors.amber
+        case "meeting": return Color(red: 0.35, green: 0.55, blue: 1.0)
+        default: return .green
+        }
     }
 }
 

@@ -479,6 +479,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         HookInstaller.installIfNeeded()
         BuddiSessionBridge.shared.startMonitoring()
         UsageService.shared.startPolling()
+        MeetingReminderService.shared.start()
+        MemoryStatsService.shared.startPolling()
 
 
 

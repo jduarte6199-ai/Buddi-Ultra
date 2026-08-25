@@ -149,13 +149,17 @@ final class BuddiSessionBridge: ObservableObject {
         for session in newPendingSessions {
             guard let toolName = session.pendingToolName,
                   let toolUseId = session.pendingToolId else { continue }
+            let isQuestion = toolName == "AskUserQuestion"
             BuddiViewCoordinator.shared.showSessionPopup(
                 kind: .approval(toolName: MCPToolFormatter.formatToolName(toolName)),
                 title: session.displayTitle,
                 projectName: session.projectName,
                 sessionId: session.sessionId,
-                detail: Self.approvalDetail(for: session),
-                toolUseId: toolUseId
+                detail: isQuestion
+                    ? Self.questionDetail(for: session)
+                    : Self.approvalDetail(for: session),
+                toolUseId: toolUseId,
+                options: isQuestion ? Self.questionOptions(for: session) : []
             )
         }
 
@@ -166,6 +170,25 @@ final class BuddiSessionBridge: ObservableObject {
         }
 
         BuddiViewCoordinator.shared.toggleExpandingView(status: true, type: .buddy)
+    }
+
+    /// AskUserQuestion payload: the first question's text.
+    private static func questionDetail(for session: SessionState) -> String {
+        guard let questions = session.activePermission?.toolInput?["questions"]?.value as? [[String: Any]],
+              let first = questions.first,
+              let question = first["question"] as? String
+        else { return "Needs your input" }
+        return popupDetail(from: question)
+    }
+
+    /// AskUserQuestion payload: the first question's option labels (max 4),
+    /// surfaced as quick-reply buttons in the bubble.
+    private static func questionOptions(for session: SessionState) -> [String] {
+        guard let questions = session.activePermission?.toolInput?["questions"]?.value as? [[String: Any]],
+              let first = questions.first,
+              let options = first["options"] as? [[String: Any]]
+        else { return [] }
+        return options.prefix(4).compactMap { $0["label"] as? String }
     }
 
     /// Deterministic one-line context for an approval popup. Prefers the

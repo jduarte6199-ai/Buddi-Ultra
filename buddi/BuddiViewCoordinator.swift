@@ -52,6 +52,8 @@ enum SessionPopupKind: Equatable {
     case ready
     /// A tool needs approval; the popup offers approve/deny inline.
     case approval(toolName: String)
+    /// A calendar event starts soon; tapping opens Calendar.
+    case meeting
 }
 
 /// Dynamic-island style banner shown on the closed notch when a Claude
@@ -70,6 +72,9 @@ struct SessionDonePopup {
     /// approve/deny actions are pinned to it so they can never act on a
     /// permission that replaced this one while the popup was on screen.
     var toolUseId: String = ""
+    /// For AskUserQuestion approvals: the option labels, shown as quick-reply
+    /// buttons in the bubble.
+    var options: [String] = []
 
     var isApproval: Bool {
         if case .approval = kind { return true }
@@ -323,7 +328,8 @@ class BuddiViewCoordinator: ObservableObject {
         projectName: String,
         sessionId: String,
         detail: String = "",
-        toolUseId: String = ""
+        toolUseId: String = "",
+        options: [String] = []
     ) {
         let popup = SessionDonePopup(
             show: true,
@@ -332,8 +338,10 @@ class BuddiViewCoordinator: ObservableObject {
             sessionId: sessionId,
             kind: kind,
             detail: detail,
-            toolUseId: toolUseId
+            toolUseId: toolUseId,
+            options: options
         )
+        SessionEventLog.shared.record(popup)
 
         if sessionDonePopup.show {
             if popup.isApproval && !sessionDonePopup.isApproval {

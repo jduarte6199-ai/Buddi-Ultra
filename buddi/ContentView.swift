@@ -219,7 +219,9 @@ struct ContentView: View {
                 SessionPopupBubble(
                     popup: popup,
                     onOpen: {
-                        if let session = BuddiSessionBridge.shared.sessionMonitor.instances
+                        if popup.kind == .meeting {
+                            NSWorkspace.shared.open(URL(string: "ical://")!)
+                        } else if let session = BuddiSessionBridge.shared.sessionMonitor.instances
                             .first(where: { $0.sessionId == popup.sessionId }) {
                             SessionAppFocuser.focus(session)
                         }
@@ -236,6 +238,18 @@ struct ContentView: View {
                         BuddiSessionBridge.shared.sessionMonitor.denyPermission(
                             sessionId: popup.sessionId,
                             reason: nil,
+                            expectedToolUseId: popup.toolUseId
+                        )
+                        coordinator.hideSessionDonePopup()
+                    },
+                    onSelectOption: { option in
+                        // The permission socket is the only channel back into
+                        // the session, so a quick-reply rides the deny reason:
+                        // Claude receives it as feedback and continues with
+                        // the chosen option. Pinned to the displayed tool.
+                        BuddiSessionBridge.shared.sessionMonitor.denyPermission(
+                            sessionId: popup.sessionId,
+                            reason: "User selected: \(option)",
                             expectedToolUseId: popup.toolUseId
                         )
                         coordinator.hideSessionDonePopup()

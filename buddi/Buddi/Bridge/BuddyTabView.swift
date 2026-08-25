@@ -159,14 +159,18 @@ private struct MemoryUsageBars: View {
                 label: "RAM",
                 percent: memory.stats.ramUsed,
                 detail: "\(Int(memory.stats.ramUsed * 100))%",
-                color: barColor(memory.stats.ramUsed, warn: 0.7, critical: 0.85)
+                // macOS keeps RAM deliberately full; only sustained very
+                // high use is worth an amber/red.
+                color: barColor(memory.stats.ramUsed, warn: 0.85, critical: 0.92)
             )
+            .help("Physical memory in use. High is normal on macOS; red means apps are competing for it.")
             UsageBar(
                 label: "Swap",
                 percent: memory.stats.swapUsed,
                 detail: swapDetail,
                 color: barColor(memory.stats.swapUsed, warn: 0.6, critical: 0.85)
             )
+            .help("Memory spilled to disk. This is what triggers 'out of application memory'. It only empties on reboot.")
             if memory.zombieSessionCount > 0 {
                 Button {
                     memory.cleanZombieSessions()
@@ -180,6 +184,12 @@ private struct MemoryUsageBars: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.orange)
                 .help("Terminate old Claude CLI processes no session is using")
+            }
+            if let message = memory.lastCleanupMessage {
+                Text(message)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             }
         }
         .onAppear { memory.refresh() }

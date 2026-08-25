@@ -26,6 +26,9 @@ final class MemoryStatsService: ObservableObject {
 
     @Published private(set) var stats = MemoryStats()
     @Published private(set) var zombieSessionCount = 0
+    /// One-line outcome of the last cleanup, shown briefly under the button
+    /// so a tap always has visible feedback.
+    @Published private(set) var lastCleanupMessage: String?
 
     private var timer: Timer?
     /// A Claude CLI process must be at least this old AND untracked to count
@@ -48,12 +51,19 @@ final class MemoryStatsService: ObservableObject {
     /// Terminates zombie Claude sessions with SIGTERM. Never touches a pid
     /// the session monitor knows about (those are the user's live chats).
     func cleanZombieSessions() {
-        for pid in zombiePids() {
+        let pids = zombiePids()
+        NSLog("[MemoryStats] cleaning %d zombie sessions: %@", pids.count, "\(pids)")
+        for pid in pids {
             kill(pid_t(pid), SIGTERM)
         }
         Task {
             try? await Task.sleep(for: .seconds(2))
             refresh()
+            lastCleanupMessage = pids.isEmpty
+                ? "Nothing to clean"
+                : "Ended \(pids.count) session\(pids.count == 1 ? "" : "s")"
+            try? await Task.sleep(for: .seconds(6))
+            lastCleanupMessage = nil
         }
     }
 

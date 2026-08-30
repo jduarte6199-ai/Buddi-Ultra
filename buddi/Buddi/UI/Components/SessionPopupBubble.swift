@@ -120,17 +120,17 @@ struct SessionPopupBubble: View {
                 Text(popup.title)
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.tail)
 
                 if !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.gray)
-                        .lineLimit(1)
+                        .lineLimit(2)
                 }
             }
-            .frame(maxWidth: 250, alignment: .leading)
+            .frame(maxWidth: 270, alignment: .leading)
             .contentShape(Rectangle())
             // On approval bubbles the text area is the only jump target.
             .onTapGesture {

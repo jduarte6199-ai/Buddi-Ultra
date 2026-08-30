@@ -128,7 +128,9 @@ actor ConversationParser {
             if type == "user" && !isMeta {
                 if let message = json["message"] as? [String: Any],
                    let text = Self.userText(from: message) {
-                    firstUserMessage = Self.truncateMessage(text, maxLength: 50)
+                    // Generous cap: rows clip visually anyway, and the hover
+                    // tooltip plus the popup want the fuller sentence.
+                    firstUserMessage = Self.truncateMessage(text, maxLength: 120)
                     break
                 }
             }

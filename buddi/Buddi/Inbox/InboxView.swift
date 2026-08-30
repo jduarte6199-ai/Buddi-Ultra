@@ -8,6 +8,7 @@
 //
 
 import AppKit
+import Defaults
 import SwiftUI
 
 struct InboxView: View {
@@ -38,6 +39,9 @@ struct InboxView: View {
 /// is still alive.
 private struct SessionActivitySection: View {
     @ObservedObject private var log = SessionEventLog.shared
+    @Default(.unattendedRemindersEnabled) private var remindersEnabled
+    @Default(.unattendedReminderMinutes) private var reminderMinutes
+    @State private var showsConfig = false
 
     private static let timeFormatter: DateFormatter = {
         let formatter = DateFormatter()
@@ -55,12 +59,41 @@ private struct SessionActivitySection: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
+                Button {
+                    showsConfig.toggle()
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.caption2)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tertiary)
+                .help("Configure unanswered-chat reminders")
                 if !log.events.isEmpty {
                     Button("Clear") { log.clear() }
                         .buttonStyle(.plain)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+            }
+
+            if showsConfig {
+                HStack(spacing: 8) {
+                    Toggle("Remind unanswered chats", isOn: $remindersEnabled)
+                        .toggleStyle(.checkbox)
+                        .font(.caption)
+                    Picker("every", selection: $reminderMinutes) {
+                        Text("3 min").tag(3)
+                        Text("5 min").tag(5)
+                        Text("10 min").tag(10)
+                        Text("15 min").tag(15)
+                        Text("30 min").tag(30)
+                    }
+                    .pickerStyle(.menu)
+                    .font(.caption)
+                    .frame(width: 110)
+                    .disabled(!remindersEnabled)
+                }
+                .padding(.vertical, 2)
             }
 
             if log.events.isEmpty {

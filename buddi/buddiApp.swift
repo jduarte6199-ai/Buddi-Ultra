@@ -481,6 +481,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UsageService.shared.startPolling()
         MeetingReminderService.shared.start()
         MemoryStatsService.shared.startPolling()
+        UnattendedChatsReminder.shared.start()
 
 
 

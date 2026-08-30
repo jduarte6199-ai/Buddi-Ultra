@@ -207,4 +207,7 @@ extension Defaults.Keys {
     static let buddyHatOverride = Key<String?>("buddyHatOverride", default: nil)
     static let buddyRarityOverride = Key<String?>("buddyRarityOverride", default: nil)
     static let notificationSound = Key<String>("notificationSound", default: "Pop")
+    // Recurring dynamic-island reminders for chats still waiting for a reply.
+    static let unattendedRemindersEnabled = Key<Bool>("unattendedRemindersEnabled", default: true)
+    static let unattendedReminderMinutes = Key<Int>("unattendedReminderMinutes", default: 5)
 }

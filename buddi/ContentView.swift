@@ -201,21 +201,16 @@ struct ContentView: View {
                         //                    }
                         //                    .keyboardShortcut("E", modifiers: .command)
                     }
-                if vm.chinHeight > 0 {
-                    Rectangle()
-                        .fill(Color.black.opacity(0.01))
-                        .frame(width: computedChinWidth, height: vm.chinHeight)
-                }
-            }
-
-            // Floating dynamic-island bubble under the notch for session
-            // events (chat ready / approval needed).
-            if coordinator.sessionDonePopup.show && vm.notchState == .closed
-                && !coordinator.helloAnimationRunning
-            {
-                // Snapshot the rendered popup so every action targets exactly
-                // what the user saw, even if the slot is overwritten mid-click.
-                let popup = coordinator.sessionDonePopup
+                // Dynamic-island bubble for session events, IN the layout
+                // flow so it always hangs right below the notch shape no
+                // matter the notch height, hover expansion, or screen.
+                if coordinator.sessionDonePopup.show && vm.notchState == .closed
+                    && !coordinator.helloAnimationRunning
+                {
+                    // Snapshot the rendered popup so every action targets
+                    // exactly what the user saw, even if the slot is
+                    // overwritten mid-click.
+                    let popup = coordinator.sessionDonePopup
                 SessionPopupBubble(
                     popup: popup,
                     onOpen: {
@@ -255,9 +250,16 @@ struct ContentView: View {
                         coordinator.hideSessionDonePopup()
                     }
                 )
-                .padding(.top, vm.effectiveClosedNotchHeight + 8)
+                .padding(.top, 8)
                 .transition(.scale(scale: 0.4, anchor: .top).combined(with: .opacity))
                 .zIndex(5)
+                }
+
+                if vm.chinHeight > 0 {
+                    Rectangle()
+                        .fill(Color.black.opacity(0.01))
+                        .frame(width: computedChinWidth, height: vm.chinHeight)
+                }
             }
         }
         .padding(.bottom, 8)

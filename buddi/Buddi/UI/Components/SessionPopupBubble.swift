@@ -79,7 +79,6 @@ struct SessionPopupBubble: View {
                 )
                 .shadow(color: .black.opacity(0.65), radius: 12, y: 5)
         )
-        .fixedSize()
         .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         // Ready and meeting bubbles are one big tap target. Approval bubbles
         // are NOT: a near-miss on the small buttons must not steal the click.
@@ -94,8 +93,12 @@ struct SessionPopupBubble: View {
     private var quickReplyRow: some View {
         HStack(spacing: 6) {
             ForEach(popup.options, id: \.self) { option in
-                Button(option) {
+                Button {
                     onSelectOption?(option)
+                } label: {
+                    Text(option)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
                 .buttonStyle(.plain)
                 .font(.caption)
@@ -122,15 +125,20 @@ struct SessionPopupBubble: View {
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .truncationMode(.tail)
+                    // Wrap to the frame width instead of the single-line
+                    // ideal, growing vertically as needed; without this the
+                    // two-line text and the capsule fight and overlap.
+                    .fixedSize(horizontal: false, vertical: true)
 
                 if !subtitle.isEmpty {
                     Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.gray)
                         .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .frame(maxWidth: 270, alignment: .leading)
+            .frame(width: 270, alignment: .leading)
             .contentShape(Rectangle())
             // On approval bubbles the text area is the only jump target.
             .onTapGesture {

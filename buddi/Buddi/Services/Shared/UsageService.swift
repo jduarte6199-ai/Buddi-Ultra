@@ -24,6 +24,9 @@ final class UsageService: ObservableObject {
 
     @Published private(set) var usage = UsageData.empty
     @Published private(set) var isAvailable = false
+    /// True once the token could not be read. The poll loop is stopped at that
+    /// point, so the UI has to offer a Reconnect button to try again.
+    @Published private(set) var needsAuthorization = false
 
     private var pollTimer: Timer?
     private var pollTask: Task<Void, Never>?
@@ -31,6 +34,10 @@ final class UsageService: ObservableObject {
     private var currentInterval: TimeInterval = 300
     private var backoffCount = 0
     private var consecutiveFailures = 0
+    /// At most ONE Keychain read per app run is allowed to show the system
+    /// authorization dialog. Everything after that reads silently or fails.
+    private var interactiveReadUsed = false
+    private var cachedToken: String?
 
     private static let isoFormatterFrac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
@@ -58,6 +65,17 @@ final class UsageService: ObservableObject {
         currentInterval = baseInterval
     }
 
+    /// User-initiated retry after the token read failed. This is the only place
+    /// that re-arms the interactive read, so the dialog can never come back on
+    /// its own. It takes a click.
+    func reconnect() {
+        stopPolling()
+        needsAuthorization = false
+        interactiveReadUsed = false
+        cachedToken = nil
+        poll()
+    }
+
     private func scheduleNextPoll() {
         pollTimer?.invalidate()
         pollTimer = Timer.scheduledTimer(withTimeInterval: currentInterval, repeats: false) { [weak self] _ in
@@ -67,14 +85,32 @@ final class UsageService: ObservableObject {
         }
     }
 
-    private func poll() {
-        pollTask = Task {
-            guard let token = Self.readOAuthToken() else {
-                isAvailable = false
-                scheduleNextPoll()
-                return
-            }
+    /// The token, read from the Keychain at most once per app run and then held
+    /// in memory. Re-reading it on every poll is what let a 5-minute timer put
+    /// an authorization dialog on screen over and over.
+    private func currentToken() -> String? {
+        if let cachedToken { return cachedToken }
 
+        let allowInteractive = !interactiveReadUsed
+        interactiveReadUsed = true
+        cachedToken = Self.readOAuthToken(allowInteractive: allowInteractive)
+        return cachedToken
+    }
+
+    private func poll() {
+        guard let token = currentToken() else {
+            // Unreadable: the user dismissed the dialog, or this app is not in
+            // the item's access list. Retrying on the timer is exactly what
+            // produced the dialog storm, so stop and wait for reconnect().
+            isAvailable = false
+            needsAuthorization = true
+            stopPolling()
+            return
+        }
+
+        needsAuthorization = false
+
+        pollTask = Task {
             if !isAvailable { isAvailable = true }
 
             do {
@@ -87,6 +123,12 @@ final class UsageService: ObservableObject {
             } catch let error as URLError where error.code.rawValue == 429 {
                 backoffCount += 1
                 currentInterval = min(1800, baseInterval * pow(2.0, Double(backoffCount)))
+            } catch let error as URLError where error.code.rawValue == 401 {
+                // The token rotated. Drop it so the next poll re-reads it; that
+                // read is silent, and if it fails the loop stops rather than
+                // prompting.
+                cachedToken = nil
+                consecutiveFailures += 1
             } catch {
                 consecutiveFailures += 1
                 if consecutiveFailures > 5 && usage.fiveHour == nil && usage.sevenDay == nil {
@@ -126,15 +168,23 @@ final class UsageService: ObservableObject {
 
     // MARK: - Keychain
 
-    private static func readOAuthToken() -> String? {
-        // Primary: /usr/bin/security CLI (avoids ACL dialog)
-        if let json = readKeychainViaCLI(),
+    /// - Parameter allowInteractive: when false, only paths that can never put
+    ///   a dialog on screen are used. Background polls always pass false.
+    private static func readOAuthToken(allowInteractive: Bool) -> String? {
+        // Primary: Security.framework with kSecUseAuthenticationUISkip. This
+        // returns errSecInteractionNotAllowed rather than prompting, so it is
+        // the only path that is safe to run unattended.
+        if let json = readKeychainViaFramework(),
            let token = extractToken(from: json) {
             return token
         }
 
-        // Fallback: Security.framework
-        if let json = readKeychainViaFramework(),
+        // Fallback: the /usr/bin/security CLI. This one CAN show the system
+        // authorization dialog, so it runs only on the first read of an app run
+        // or after the user asks to reconnect.
+        guard allowInteractive else { return nil }
+
+        if let json = readKeychainViaCLI(),
            let token = extractToken(from: json) {
             return token
         }

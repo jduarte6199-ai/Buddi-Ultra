@@ -102,6 +102,10 @@ struct ClaudeCodeSettings: View {
                             Text("Connected")
                                 .foregroundStyle(.secondary)
                         }
+                    } else if usageService.needsAuthorization {
+                        Button("Reconnect") {
+                            usageService.reconnect()
+                        }
                     } else {
                         Text("Not available")
                             .foregroundStyle(.secondary)
@@ -110,9 +114,13 @@ struct ClaudeCodeSettings: View {
             } header: {
                 Text("Status")
             } footer: {
-                Text("OAuth login required for plan usage display.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(
+                    usageService.needsAuthorization
+                        ? "Buddi could not read the Claude Code token, so usage polling is paused. Reconnect asks macOS for Keychain access once; it will not ask again on its own."
+                        : "OAuth login required for plan usage display."
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             Section {

@@ -13,12 +13,15 @@ import SwiftUI
 
 struct InboxView: View {
     @ObservedObject private var viewModel = InboxViewModel.shared
+    @Default(.slackInboxEnabled) private var slackEnabled
+    @Default(.clickUpInboxEnabled) private var clickUpEnabled
+    @Default(.hubTicketsInboxEnabled) private var hubTicketsEnabled
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 10) {
-                SessionActivitySection()
-                ForEach(InboxSource.allCases) { source in
+                SessionActivitySection(onSourcesChanged: { viewModel.refresh() })
+                ForEach(InboxSource.allCases.filter { $0.isEnabled }) { source in
                     InboxSection(
                         source: source,
                         state: viewModel.sections[source] ?? .loading,
@@ -38,9 +41,14 @@ struct InboxView: View {
 /// missed while away is still reviewable. Click jumps to the session when it
 /// is still alive.
 private struct SessionActivitySection: View {
+    var onSourcesChanged: () -> Void = {}
+
     @ObservedObject private var log = SessionEventLog.shared
     @Default(.unattendedRemindersEnabled) private var remindersEnabled
     @Default(.unattendedReminderMinutes) private var reminderMinutes
+    @Default(.slackInboxEnabled) private var slackEnabled
+    @Default(.clickUpInboxEnabled) private var clickUpEnabled
+    @Default(.hubTicketsInboxEnabled) private var hubTicketsEnabled
     @State private var showsConfig = false
 
     private static let timeFormatter: DateFormatter = {
@@ -77,21 +85,42 @@ private struct SessionActivitySection: View {
             }
 
             if showsConfig {
-                HStack(spacing: 8) {
-                    Toggle("Remind unanswered chats", isOn: $remindersEnabled)
-                        .toggleStyle(.checkbox)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Toggle("Remind unanswered chats", isOn: $remindersEnabled)
+                            .toggleStyle(.checkbox)
+                            .font(.caption)
+                        Picker("every", selection: $reminderMinutes) {
+                            Text("3 min").tag(3)
+                            Text("5 min").tag(5)
+                            Text("10 min").tag(10)
+                            Text("15 min").tag(15)
+                            Text("30 min").tag(30)
+                        }
+                        .pickerStyle(.menu)
                         .font(.caption)
-                    Picker("every", selection: $reminderMinutes) {
-                        Text("3 min").tag(3)
-                        Text("5 min").tag(5)
-                        Text("10 min").tag(10)
-                        Text("15 min").tag(15)
-                        Text("30 min").tag(30)
+                        .frame(width: 110)
+                        .disabled(!remindersEnabled)
                     }
-                    .pickerStyle(.menu)
-                    .font(.caption)
-                    .frame(width: 110)
-                    .disabled(!remindersEnabled)
+                    // Integrations are opt-out for people who only want the
+                    // Claude side of Buddi (usage bars, popups, activity).
+                    HStack(spacing: 10) {
+                        Text("Integrations:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Toggle("Slack", isOn: $slackEnabled)
+                            .toggleStyle(.checkbox)
+                            .font(.caption)
+                        Toggle("ClickUp", isOn: $clickUpEnabled)
+                            .toggleStyle(.checkbox)
+                            .font(.caption)
+                        Toggle("Hub Tickets", isOn: $hubTicketsEnabled)
+                            .toggleStyle(.checkbox)
+                            .font(.caption)
+                    }
+                    .onChange(of: slackEnabled) { _, _ in onSourcesChanged() }
+                    .onChange(of: clickUpEnabled) { _, _ in onSourcesChanged() }
+                    .onChange(of: hubTicketsEnabled) { _, _ in onSourcesChanged() }
                 }
                 .padding(.vertical, 2)
             }

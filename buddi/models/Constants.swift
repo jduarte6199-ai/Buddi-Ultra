@@ -210,4 +210,9 @@ extension Defaults.Keys {
     // Recurring dynamic-island reminders for chats still waiting for a reply.
     static let unattendedRemindersEnabled = Key<Bool>("unattendedRemindersEnabled", default: true)
     static let unattendedReminderMinutes = Key<Int>("unattendedReminderMinutes", default: 5)
+    // Inbox integrations are individually optional: someone who only wants
+    // the Claude side of Buddi can switch these off entirely.
+    static let slackInboxEnabled = Key<Bool>("slackInboxEnabled", default: true)
+    static let clickUpInboxEnabled = Key<Bool>("clickUpInboxEnabled", default: true)
+    static let hubTicketsInboxEnabled = Key<Bool>("hubTicketsInboxEnabled", default: true)
 }

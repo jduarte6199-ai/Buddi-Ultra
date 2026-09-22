@@ -50,6 +50,11 @@ final class InboxViewModel: ObservableObject {
         refreshTask = Task { [providers] in
             for provider in providers {
                 let source = provider.source
+                // Switched-off integrations are neither shown nor polled.
+                guard source.isEnabled else {
+                    sections[source] = nil
+                    continue
+                }
                 if sections[source] == nil {
                     sections[source] = .loading
                 }

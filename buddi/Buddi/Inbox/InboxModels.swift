@@ -7,6 +7,7 @@
 //  UserDefaults, never in the repo.
 //
 
+import Defaults
 import Foundation
 import Security
 
@@ -33,6 +34,20 @@ enum InboxSource: String, CaseIterable, Identifiable {
         case .clickUp: return "checklist"
         case .hubTickets: return "ticket.fill"
         }
+    }
+
+    /// Per-source on/off switch (Inbox gear panel). Off means the section is
+    /// hidden and its provider is never polled.
+    var enabledKey: Defaults.Key<Bool> {
+        switch self {
+        case .slack: return .slackInboxEnabled
+        case .clickUp: return .clickUpInboxEnabled
+        case .hubTickets: return .hubTicketsInboxEnabled
+        }
+    }
+
+    var isEnabled: Bool {
+        Defaults[enabledKey]
     }
 }
 

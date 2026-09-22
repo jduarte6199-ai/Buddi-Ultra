@@ -64,11 +64,31 @@ Claude Code → Hooks → Unix Socket → Buddi → Notch UI
 
 Buddi registers hooks with Claude Code on launch. When Claude Code emits events — tool use, thinking, session start/end, permission requests — the hooks forward them to Buddi over a Unix domain socket. The app maps events to buddy animations and UI state. When Claude needs permission, the notch expands with approve/deny buttons.
 
-## Building from Source
+## Building from Source (recommended)
 
-1. Clone the repo
-2. Open `buddi.xcodeproj` in Xcode 16+
-3. Build and run — SPM dependencies resolve automatically
+Building locally avoids the Gatekeeper quarantine entirely. With Xcode
+installed (App Store, free):
+
+```bash
+git clone https://github.com/jduarte6199-ai/Buddi-Ultra.git
+cd Buddi-Ultra
+./install.sh
+```
+
+That builds the Release app, installs it to /Applications, and launches it.
+Or do it by hand: open `buddi.xcodeproj` in Xcode 16+ and Run; SPM
+dependencies resolve automatically.
+
+First-run notes:
+
+- The Claude usage bars and session popups work as soon as Claude Code is
+  installed; Buddi registers its hooks automatically on launch.
+- The Inbox tab's integrations (Slack, ClickUp, tickets) are optional. If you
+  don't use them, open Inbox, click the gear in "Claude activity", and
+  uncheck them; the sections disappear and nothing is ever polled.
+- Calendar events and meeting reminders only appear if you grant Calendar
+  access. Accessibility permission (System Settings > Privacy & Security) is
+  optional; it enables exact-window jumping.
 
 ## Acknowledgements
 

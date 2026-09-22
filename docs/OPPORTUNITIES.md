@@ -1,6 +1,6 @@
 # New Opportunities for Buddi Ultra
 
-*Synthesis of six research passes (54 raw ideas), scored against the live codebase at `/Users/joseduarte/Code/Buddi`. Claims spot-checked by reading `HookSocketServer.swift`, `buddi-hook.py`, `ToolApprovalHandler.swift`, `BuddiSessionBridge.swift`, `SpriteAnimator.swift`, `UsageService.swift`, and `LiveActivityModifier.swift`.*
+*Synthesis of six research passes (54 raw ideas), scored against the live codebase at the local checkout. Claims spot-checked by reading `HookSocketServer.swift`, `buddi-hook.py`, `ToolApprovalHandler.swift`, `BuddiSessionBridge.swift`, `SpriteAnimator.swift`, `UsageService.swift`, and `LiveActivityModifier.swift`.*
 
 ## Executive summary
 

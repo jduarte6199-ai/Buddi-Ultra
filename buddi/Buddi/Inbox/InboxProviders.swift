@@ -171,7 +171,7 @@ struct ClickUpInboxProvider: InboxProvider {
 /// the agent bearer token (see docs/INTEGRATIONS.md for the hub-side spec).
 struct HubTicketsInboxProvider: InboxProvider {
     let source = InboxSource.hubTickets
-    /// Hub base URL, e.g. https://hub.buildauthority.co
+    /// Hub base URL, e.g. https://hub.example.com
     static var baseURL: String {
         UserDefaults.standard.string(forKey: "hubBaseURL") ?? ""
     }

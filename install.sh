@@ -20,8 +20,15 @@ if [ -z "$APP" ]; then
     exit 1
 fi
 
-# Consistent ad-hoc signature across the bundle (mixed signatures crash at launch).
-codesign --force --deep -s - "$APP"
+# Sign the whole bundle consistently (mixed signatures crash at launch).
+# Prefer the stable local identity from setup-signing.sh: with it, Keychain
+# permissions survive rebuilds and macOS never re-prompts after updates.
+IDENTITY="-"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "Buddi Local Signing"; then
+    IDENTITY="Buddi Local Signing"
+fi
+codesign --force --deep -s "$IDENTITY" "$APP"
+echo "Signed with: $IDENTITY"
 
 echo "Installing to /Applications..."
 osascript -e 'tell application "buddi" to quit' 2>/dev/null || true

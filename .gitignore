@@ -62,3 +62,8 @@ scripts/
 # Claude (local)
 .claude/
 CLAUDE.md
+# Never commit signing or credential material
+*.p12
+*.pem
+*.key
+credentials/

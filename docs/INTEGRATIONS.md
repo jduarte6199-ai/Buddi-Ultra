@@ -25,22 +25,22 @@ deliberately out of scope for the polling MVP.
 v1 lists open tasks assigned to the token's user with a due date before the
 end of today, across every team the token can see. Rows deep-link to the task.
 
-## BOA hub tickets
+## Hub tickets
 
 Buddi calls `GET {hubBaseURL}/api/dev/tickets` with
 `Authorization: Bearer <agent token>` and lists tickets whose status is not
 closed/done/resolved. Rows link to `{hubBaseURL}/dev`.
 
-### Hub-side work required (boa-hub repo)
+### Hub-side work required (your ticketing backend)
 
-The hub currently authenticates that route with Clerk sessions only. To let
-Buddi (a native app, no browser session) read and act on tickets:
+If the ticket system authenticates with browser sessions only, Buddi (a
+native app, no browser session) needs a token path:
 
-1. Add an env var `HUB_AGENT_TOKEN` (long random string, one per human).
-2. In `src/app/api/dev/tickets/route.ts` (and `[id]` + `[id]/comments`),
-   accept `Authorization: Bearer $HUB_AGENT_TOKEN` as an alternative to
-   `requireDeveloper()` for GET, PATCH (status changes), and POST comments.
-   Constant-time comparison, and log agent-token usage distinctly.
+1. Add a server-side env var holding a long random agent token, one per human.
+2. In the ticket API routes, accept `Authorization: Bearer <token>` as an
+   alternative to the session check for GET, PATCH (status changes), and
+   POST comments. Compare in constant time and log agent-token usage
+   distinctly.
 3. Optionally scope the token read-only at first (GET only) and expand to
    PATCH/comment once the Buddi UI grows approve/hold/close buttons.
 

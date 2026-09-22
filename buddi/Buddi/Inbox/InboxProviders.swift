@@ -165,9 +165,9 @@ struct ClickUpInboxProvider: InboxProvider {
     }
 }
 
-// MARK: - BOA hub tickets
+// MARK: - Hub tickets
 
-/// Reads open tickets from the boa-hub dev board. Requires the hub to accept
+/// Reads open tickets from your ticketing backend. Requires the hub to accept
 /// the agent bearer token (see docs/INTEGRATIONS.md for the hub-side spec).
 struct HubTicketsInboxProvider: InboxProvider {
     let source = InboxSource.hubTickets

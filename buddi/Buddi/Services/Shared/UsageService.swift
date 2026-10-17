@@ -73,6 +73,7 @@ final class UsageService: ObservableObject {
         needsAuthorization = false
         interactiveReadUsed = false
         cachedToken = nil
+        IntegrationTokens.delete(.claudeTokenCopy)
         poll()
     }
 
@@ -85,16 +86,28 @@ final class UsageService: ObservableObject {
         }
     }
 
-    /// The token, read from the Keychain at most once per app run and then held
-    /// in memory. Re-reading it on every poll is what let a 5-minute timer put
-    /// an authorization dialog on screen over and over.
+    /// The token, resolved in cost order: memory, then Buddi's OWN keychain
+    /// copy (always silent, survives relaunches, immune to Claude Code
+    /// rewriting its item and resetting the access list), and only then the
+    /// Claude Code item itself, which may show the system dialog at most once
+    /// per app run. Every successful source read refreshes the copy, so the
+    /// dialog only ever returns when the token actually rotates.
     private func currentToken() -> String? {
         if let cachedToken { return cachedToken }
 
+        if let copy = IntegrationTokens.read(.claudeTokenCopy) {
+            cachedToken = copy
+            return copy
+        }
+
         let allowInteractive = !interactiveReadUsed
         interactiveReadUsed = true
-        cachedToken = Self.readOAuthToken(allowInteractive: allowInteractive)
-        return cachedToken
+        if let token = Self.readOAuthToken(allowInteractive: allowInteractive) {
+            IntegrationTokens.write(.claudeTokenCopy, token: token)
+            cachedToken = token
+            return token
+        }
+        return nil
     }
 
     private func poll() {
@@ -124,10 +137,13 @@ final class UsageService: ObservableObject {
                 backoffCount += 1
                 currentInterval = min(1800, baseInterval * pow(2.0, Double(backoffCount)))
             } catch let error as URLError where error.code.rawValue == 401 {
-                // The token rotated. Drop it so the next poll re-reads it; that
-                // read is silent, and if it fails the loop stops rather than
-                // prompting.
+                // The token rotated: drop BOTH the memory cache and the stale
+                // keychain copy, or the copy would feed the dead token back
+                // forever. The next poll re-reads the source; silently when the
+                // access list allows it, otherwise with at most one dialog per
+                // run before stopping for reconnect().
                 cachedToken = nil
+                IntegrationTokens.delete(.claudeTokenCopy)
                 consecutiveFailures += 1
             } catch {
                 consecutiveFailures += 1

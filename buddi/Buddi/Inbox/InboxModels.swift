@@ -78,6 +78,11 @@ enum IntegrationTokens {
         case slack = "buddi.integration.slack"
         case clickUp = "buddi.integration.clickup"
         case hub = "buddi.integration.hub"
+        /// Buddi's own copy of the Claude Code OAuth access token. Claude Code
+        /// rewrites ITS keychain item constantly, resetting the access list,
+        /// so reading it directly re-prompts forever; this copy belongs to
+        /// Buddi and is always readable silently.
+        case claudeTokenCopy = "buddi.claude.token-copy"
     }
 
     static func read(_ key: Key) -> String? {

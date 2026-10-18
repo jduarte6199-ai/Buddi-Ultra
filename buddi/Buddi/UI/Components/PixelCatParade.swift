@@ -24,12 +24,12 @@ struct PixelCatParade: View {
     }
 
     private static let roster: [(id: String, name: String, frames: Int)] = [
+        ("titi", "Titi", 7),
+        ("owi", "Owi", 7),
         ("salem", "Salem", 7),
-        ("titi", "Ouititi", 7),
+        ("snowy", "Snowy", 7),
         ("gin", "Gin", 6),
         ("tonic", "Tonic", 6),
-        ("owi", "Oui", 7),
-        ("snowy", "Snowy", 7),
     ]
     private static let cellSize = CGSize(width: 187, height: 126)
     private static let walkSpeed: CGFloat = 20          // points per second
@@ -130,5 +130,107 @@ struct PixelCatParade: View {
             guard let frame = cg.cropping(to: rect) else { return nil }
             return NSImage(cgImage: frame, size: NSSize(width: cellWidth, height: cg.height))
         }
+    }
+}
+
+// MARK: - Mini cat for the closed notch
+
+/// One cat in the closed notch, in place of the old face glyph. The notch
+/// strip is only ~20pt tall, so frames are cropped to the cat's actual
+/// silhouette (the sprite cells are mostly transparent padding). Walks in
+/// place while Claude is working, sits while it waits; cats take turns.
+struct PixelCatMini: View {
+    let height: CGFloat
+    let walking: Bool
+
+    private struct MiniCat {
+        let walk: [NSImage]
+        let idle: NSImage
+        let aspect: CGFloat
+    }
+
+    private static let turnDuration: TimeInterval = 30
+    private static let walkFPS: Double = 9
+
+    private static let cats: [MiniCat] = PixelCatSprites.roster.compactMap { entry in
+        guard let walkSheet = PixelCatSprites.image("pet-\(entry.id)-walk"),
+              let walkCG = walkSheet.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return nil }
+        let cells = PixelCatSprites.cells(of: walkCG, count: entry.frames)
+        let idleCG = PixelCatSprites.image("pet-\(entry.id)-idle")?
+            .cgImage(forProposedRect: nil, context: nil, hints: nil)
+        let all = cells + [idleCG].compactMap { $0 }
+        // One shared crop box per cat so frames don't jitter between sizes.
+        guard let box = all.compactMap(PixelCatSprites.opaqueBounds).reduce(nil, { acc, rect in
+            acc.map { $0.union(rect) } ?? rect
+        }) else { return nil }
+        let crop: (CGImage) -> NSImage? = { image in
+            image.cropping(to: box).map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+        }
+        let walk = cells.compactMap(crop)
+        guard !walk.isEmpty else { return nil }
+        return MiniCat(
+            walk: walk,
+            idle: idleCG.flatMap(crop) ?? walk[0],
+            aspect: box.width / max(box.height, 1)
+        )
+    }
+
+    var body: some View {
+        if Self.cats.isEmpty {
+            Color.clear.frame(width: height, height: height)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 18)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let cat = Self.cats[Int(t / Self.turnDuration) % Self.cats.count]
+                let image = walking ? cat.walk[Int(t * Self.walkFPS) % cat.walk.count] : cat.idle
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.none)
+                    .frame(width: height * cat.aspect, height: height)
+            }
+        }
+    }
+}
+
+/// Shared sprite loading for the parade and the mini cat.
+enum PixelCatSprites {
+    static let roster: [(id: String, frames: Int)] = [
+        ("titi", 7), ("owi", 7), ("salem", 7), ("snowy", 7), ("gin", 6), ("tonic", 6),
+    ]
+
+    static func image(_ name: String) -> NSImage? {
+        let url = Bundle.main.url(forResource: name, withExtension: "png")
+            ?? Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "Pets")
+        return url.flatMap { NSImage(contentsOf: $0) }
+    }
+
+    static func cells(of sheet: CGImage, count: Int) -> [CGImage] {
+        let cellWidth = sheet.width / count
+        return (0..<count).compactMap {
+            sheet.cropping(to: CGRect(x: $0 * cellWidth, y: 0, width: cellWidth, height: sheet.height))
+        }
+    }
+
+    /// Bounding box of pixels with alpha > 0, in image (top-left) coordinates.
+    static func opaqueBounds(_ image: CGImage) -> CGRect? {
+        let w = image.width, h = image.height
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        guard let context = CGContext(
+            data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var minX = w, minY = h, maxX = -1, maxY = -1
+        for y in 0..<h {
+            for x in 0..<w where pixels[(y * w + x) * 4 + 3] > 0 {
+                minX = min(minX, x); maxX = max(maxX, x)
+                minY = min(minY, y); maxY = max(maxY, y)
+            }
+        }
+        guard maxX >= minX else { return nil }
+        // Bitmap rows run top-down here, matching CGImage.cropping coordinates.
+        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 }

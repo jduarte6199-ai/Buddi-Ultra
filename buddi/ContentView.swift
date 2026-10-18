@@ -67,7 +67,7 @@ struct ContentView: View {
         } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .buddy)
             && vm.notchState == .closed && hasActiveClaudeSession && !vm.hideOnClosed
         {
-            chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
+            chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 36)
         } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
             && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle)
             && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed
@@ -819,7 +819,12 @@ extension ContentView {
 
         return HStack(spacing: 0) {
             HStack(spacing: 2) {
-                BuddyFaceIcon(fontSize: min(notchContentHeight * 0.4, 9))
+                // A pixel cat instead of the face glyph: walks in place while
+                // Claude works, sits while a session waits.
+                PixelCatMini(
+                    height: min(notchContentHeight * 0.85, 20),
+                    walking: isProcessing
+                )
                 if hasPending {
                     PermissionIndicatorIcon(
                         size: min(notchContentHeight * 0.5, 12),
@@ -827,7 +832,7 @@ extension ContentView {
                     )
                 }
             }
-            .frame(width: sideWidth + (hasPending ? 18 : 0), height: notchContentHeight)
+            .frame(width: sideWidth + 8 + (hasPending ? 18 : 0), height: notchContentHeight)
 
             Rectangle()
                 .fill(.black)
@@ -855,7 +860,7 @@ extension ContentView {
                     }
                 }
             }
-            .frame(width: sideWidth, height: notchContentHeight)
+            .frame(width: sideWidth + 8, height: notchContentHeight)
         }
         .frame(height: vm.effectiveClosedNotchHeight + (isHovering ? 8 : 0), alignment: .center)
     }

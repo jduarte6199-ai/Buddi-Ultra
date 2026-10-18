@@ -47,16 +47,7 @@ struct BuddyTabView: View {
     private var homeContent: some View {
         HStack(alignment: .top, spacing: 15) {
             VStack(spacing: 3) {
-                ASCIIFullSpriteView(
-                    animator: BuddyManager.shared.animator,
-                    identity: BuddyManager.shared.effectiveIdentity,
-                    fontSize: 8
-                )
-
-                Text(BuddyManager.shared.effectiveIdentity.name
-                     ?? BuddyManager.shared.effectiveIdentity.species.rawValue.capitalized)
-                    .font(.caption2.weight(.medium).monospaced())
-                    .foregroundColor(Color(nsColor: BuddyManager.shared.effectiveIdentity.rarity.nsColor).opacity(0.8))
+                PixelCatParade(width: 100)
 
                 if usageService.isAvailable {
                     TimelineView(.periodic(from: .now, by: 60)) { context in

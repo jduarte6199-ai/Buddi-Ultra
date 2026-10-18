@@ -72,54 +72,60 @@ enum InboxSectionState: Equatable {
 
 // MARK: - Token storage (Keychain)
 
-/// Minimal Keychain-backed storage for integration tokens.
+/// Keychain-backed storage for integration tokens, done entirely through
+/// Apple's /usr/bin/security tool. Items it creates trust that tool in their
+/// access list, so every later read is silent. Items created by Buddi's own
+/// process are bound to the binary's code hash instead, and since every
+/// rebuild changes that hash, each update would re-prompt for the password.
 enum IntegrationTokens {
     enum Key: String, CaseIterable {
         case slack = "buddi.integration.slack"
         case clickUp = "buddi.integration.clickup"
         case hub = "buddi.integration.hub"
-        /// Buddi's own copy of the Claude Code OAuth access token. Claude Code
-        /// rewrites ITS keychain item constantly, resetting the access list,
-        /// so reading it directly re-prompts forever; this copy belongs to
-        /// Buddi and is always readable silently.
-        case claudeTokenCopy = "buddi.claude.token-copy"
     }
 
     static func read(_ key: Key) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: key.rawValue,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let token = String(data: data, encoding: .utf8),
-              !token.isEmpty
-        else { return nil }
-        return token
+        guard let output = run(["find-generic-password", "-s", key.rawValue, "-w"]) else {
+            return nil
+        }
+        let token = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        return token.isEmpty ? nil : token
     }
 
+    /// Note: the value is passed as an argument, so it is visible in the
+    /// process list for the few milliseconds the tool runs. Acceptable for a
+    /// single-user machine; `security` offers no stdin form for -w.
     @discardableResult
     static func write(_ key: Key, token: String) -> Bool {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        delete(key)
-        guard !trimmed.isEmpty else { return true }
-        let item: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: key.rawValue,
-            kSecAttrAccount as String: NSUserName(),
-            kSecValueData as String: Data(trimmed.utf8),
-        ]
-        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+        guard !trimmed.isEmpty else {
+            delete(key)
+            return true
+        }
+        return run([
+            "add-generic-password", "-U",
+            "-a", NSUserName(),
+            "-s", key.rawValue,
+            "-w", trimmed,
+        ]) != nil
     }
 
     static func delete(_ key: Key) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: key.rawValue,
-        ]
-        SecItemDelete(query as CFDictionary)
+        _ = run(["delete-generic-password", "-s", key.rawValue])
+    }
+
+    /// Runs /usr/bin/security; returns stdout on exit 0, nil otherwise.
+    static func run(_ arguments: [String]) -> String? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = arguments
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        return String(data: data, encoding: .utf8) ?? ""
     }
 }

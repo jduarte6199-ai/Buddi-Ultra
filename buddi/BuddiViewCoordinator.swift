@@ -333,7 +333,7 @@ class BuddiViewCoordinator: ObservableObject {
     ) {
         let popup = SessionDonePopup(
             show: true,
-            title: title,
+            title: DisplayText.clean(title) ?? title,
             projectName: projectName,
             sessionId: sessionId,
             kind: kind,

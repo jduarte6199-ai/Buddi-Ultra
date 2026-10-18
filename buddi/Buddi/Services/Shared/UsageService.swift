@@ -34,8 +34,7 @@ final class UsageService: ObservableObject {
     private var currentInterval: TimeInterval = 300
     private var backoffCount = 0
     private var consecutiveFailures = 0
-    /// At most ONE Keychain read per app run is allowed to show the system
-    /// authorization dialog. Everything after that reads silently or fails.
+    /// Set after a failed token read; polling stays stopped until reconnect().
     private var interactiveReadUsed = false
     private var cachedToken: String?
 
@@ -73,7 +72,6 @@ final class UsageService: ObservableObject {
         needsAuthorization = false
         interactiveReadUsed = false
         cachedToken = nil
-        IntegrationTokens.delete(.claudeTokenCopy)
         poll()
     }
 
@@ -86,27 +84,23 @@ final class UsageService: ObservableObject {
         }
     }
 
-    /// The token, resolved in cost order: memory, then Buddi's OWN keychain
-    /// copy (always silent, survives relaunches, immune to Claude Code
-    /// rewriting its item and resetting the access list), and only then the
-    /// Claude Code item itself, which may show the system dialog at most once
-    /// per app run. Every successful source read refreshes the copy, so the
-    /// dialog only ever returns when the token actually rotates.
+    /// The token, held in memory and otherwise read through Apple's
+    /// /usr/bin/security tool. Claude Code creates its credentials item with
+    /// that tool, so the item's access list trusts it and the read is silent,
+    /// including right after Claude Code logs in again and rewrites the item.
+    /// Reading through Buddi's own process instead is what kept prompting:
+    /// Buddi is not in that list, and every rebuild changes its code hash.
+    /// After a FAILED read the loop stops and waits for reconnect(), so an
+    /// unexpected access-list change can never become a dialog loop.
     private func currentToken() -> String? {
         if let cachedToken { return cachedToken }
+        guard !interactiveReadUsed else { return nil }
 
-        if let copy = IntegrationTokens.read(.claudeTokenCopy) {
-            cachedToken = copy
-            return copy
-        }
-
-        let allowInteractive = !interactiveReadUsed
-        interactiveReadUsed = true
-        if let token = Self.readOAuthToken(allowInteractive: allowInteractive) {
-            IntegrationTokens.write(.claudeTokenCopy, token: token)
+        if let token = Self.readOAuthToken() {
             cachedToken = token
             return token
         }
+        interactiveReadUsed = true
         return nil
     }
 
@@ -143,7 +137,6 @@ final class UsageService: ObservableObject {
                 // access list allows it, otherwise with at most one dialog per
                 // run before stopping for reconnect().
                 cachedToken = nil
-                IntegrationTokens.delete(.claudeTokenCopy)
                 consecutiveFailures += 1
             } catch {
                 consecutiveFailures += 1
@@ -184,68 +177,14 @@ final class UsageService: ObservableObject {
 
     // MARK: - Keychain
 
-    /// - Parameter allowInteractive: when false, only paths that can never put
-    ///   a dialog on screen are used. Background polls always pass false.
-    private static func readOAuthToken(allowInteractive: Bool) -> String? {
-        // Primary: Security.framework with kSecUseAuthenticationUISkip. This
-        // returns errSecInteractionNotAllowed rather than prompting, so it is
-        // the only path that is safe to run unattended.
-        if let json = readKeychainViaFramework(),
-           let token = extractToken(from: json) {
-            return token
-        }
-
-        // Fallback: the /usr/bin/security CLI. This one CAN show the system
-        // authorization dialog, so it runs only on the first read of an app run
-        // or after the user asks to reconnect.
-        guard allowInteractive else { return nil }
-
-        if let json = readKeychainViaCLI(),
-           let token = extractToken(from: json) {
-            return token
-        }
-
-        return nil
-    }
-
-    private static func readKeychainViaCLI() -> [String: Any]? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-        process.arguments = ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
-
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-
-        do { try process.run() } catch { return nil }
-        process.waitUntilExit()
-
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard !data.isEmpty,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        return json
-    }
-
-    private static func readKeychainViaFramework() -> [String: Any]? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Claude Code-credentials",
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUISkip
-        ]
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        guard status == errSecSuccess,
-              let data = result as? Data,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        return json
+    private static func readOAuthToken() -> String? {
+        guard let output = IntegrationTokens.run(
+            ["find-generic-password", "-s", "Claude Code-credentials", "-w"]
+        ),
+            let data = output.data(using: .utf8),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return extractToken(from: json)
     }
 
     private static func extractToken(from json: [String: Any]) -> String? {

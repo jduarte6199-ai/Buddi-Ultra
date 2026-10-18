@@ -571,8 +571,10 @@ struct ContentView: View {
     @ViewBuilder
     var dragDetector: some View {
         if Defaults[.shelf] && vm.notchState == .closed {
+            // Drop target hugs the notch (not the whole window width), so the
+            // shelf only reacts when a file is actually brought to the notch.
             Color.clear
-                .frame(maxWidth: .infinity, maxHeight: vm.closedNotchSize.height + 50)
+                .frame(width: vm.closedNotchSize.width + 160, height: vm.closedNotchSize.height + 40)
                 .contentShape(Rectangle())
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], isTargeted: $vm.dragDetectorTargeting) { providers in
             vm.dropEvent = true

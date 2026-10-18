@@ -199,7 +199,12 @@ actor ConversationParser {
 
         return ConversationInfo(
             summary: summary,
-            lastMessage: Self.truncateMessage(lastMessage, maxLength: 80),
+            // Tool inputs keep their raw form (globs, paths); prose is cleaned
+            // of injected tags and markdown before it reaches a notch label.
+            lastMessage: Self.truncateMessage(
+                lastMessageRole == "tool" ? lastMessage : DisplayText.clean(lastMessage),
+                maxLength: 80
+            ),
             lastMessageRole: lastMessageRole,
             lastToolName: lastToolName,
             firstUserMessage: firstUserMessage,
@@ -223,16 +228,17 @@ actor ConversationParser {
     /// command wrappers, injected reminders).
     private static func userText(from message: [String: Any]) -> String? {
         if let text = message["content"] as? String {
-            return isNoise(text) ? nil : text
+            return isNoise(text) ? nil : DisplayText.clean(text)
         }
         if let blocks = message["content"] as? [[String: Any]] {
             for block in blocks {
                 guard block["type"] as? String == "text",
                       let text = block["text"] as? String,
                       !text.isEmpty,
-                      !isNoise(text)
+                      !isNoise(text),
+                      let cleaned = DisplayText.clean(text)
                 else { continue }
-                return text
+                return cleaned
             }
         }
         return nil

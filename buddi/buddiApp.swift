@@ -202,10 +202,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let uuid = screen.displayUUID else { return }
         
         let screenFrame = screen.frame
-        let notchHeight = openNotchSize.height
-        let notchWidth = openNotchSize.width
-        
-        // Create notch region at the top-center of the screen where an open notch would occupy
+        // Only a drag brought right up to the notch opens the shelf; the full
+        // open-panel footprint used to catch every file dragged across the
+        // top of the screen (tab bars, toolbars) and pop the drop zones.
+        let closed = getClosedNotchSize(screenUUID: uuid)
+        let notchWidth = closed.width + 160
+        let notchHeight = closed.height + 40
+
         let notchRegion = CGRect(
             x: screenFrame.midX - notchWidth / 2,
             y: screenFrame.maxY - notchHeight,

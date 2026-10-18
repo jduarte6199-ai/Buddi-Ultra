@@ -2,28 +2,33 @@
 //  ProcessingSpinner.swift
 //  Buddi
 //
-//  Animated symbol spinner for processing state
+//  Claude Code's own spinner: the same six glyphs, played forward then back
+//  (ping-pong) like the CLI does, in Claude orange with a breathing glow.
 //
 
-import Combine
 import SwiftUI
 
 struct ProcessingSpinner: View {
-    @State private var phase: Int = 0
-
-    private let symbols = ["·", "✢", "✳", "∗", "✻", "✽"]
-    private let color = Color(red: 0.85, green: 0.47, blue: 0.34) // Claude orange
-
-    private let timer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
+    private static let glyphs = ["·", "✢", "✳", "✶", "✻", "✽"]
+    /// Forward then back without repeating the end glyphs: 0 1 2 3 4 5 4 3 2 1.
+    private static let sequence: [String] =
+        glyphs + glyphs.dropFirst().dropLast().reversed()
+    private static let frameInterval: TimeInterval = 0.11
+    private static let color = Color(red: 0.85, green: 0.47, blue: 0.34)
 
     var body: some View {
-        Text(symbols[phase % symbols.count])
-            .font(.system(size: 12, weight: .bold))
-            .foregroundColor(color)
-            .frame(width: 12, alignment: .center)
-            .onReceive(timer) { _ in
-                phase = (phase + 1) % symbols.count
-            }
+        TimelineView(.periodic(from: .now, by: Self.frameInterval)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            let frame = Int(t / Self.frameInterval) % Self.sequence.count
+            // Glow breathes on a slow sine, independent of the glyph steps.
+            let glow = 0.35 + 0.35 * (sin(t * 2.4) + 1) / 2
+
+            Text(Self.sequence[frame])
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(Self.color)
+                .shadow(color: Self.color.opacity(glow), radius: 4)
+                .frame(width: 12, alignment: .center)
+        }
     }
 }
 

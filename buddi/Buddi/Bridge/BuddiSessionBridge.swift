@@ -200,16 +200,20 @@ final class BuddiSessionBridge: ObservableObject {
             let preferredKeys = ["command", "file_path", "path", "url", "pattern", "prompt", "query"]
             for key in preferredKeys {
                 if let value = input[key]?.value as? String, !value.isEmpty {
-                    return popupDetail(from: value)
+                    return popupDetail(from: value, clean: false)
                 }
             }
         }
-        return popupDetail(from: session.pendingToolInput)
+        return popupDetail(from: session.pendingToolInput, clean: false)
     }
 
     /// Single-line, length-capped context string for the notch popup.
-    private static func popupDetail(from text: String?) -> String {
-        guard let text else { return "" }
+    /// - Parameter clean: strip injected tags and markdown. Off for raw tool
+    ///   payloads (commands, paths, globs) where every character matters.
+    private static func popupDetail(from text: String?, clean: Bool = true) -> String {
+        guard let raw = text,
+              let text = clean ? DisplayText.clean(raw) : raw
+        else { return "" }
         let firstLine = text
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }

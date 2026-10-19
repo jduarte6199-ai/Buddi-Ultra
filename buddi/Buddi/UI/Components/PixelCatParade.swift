@@ -601,3 +601,135 @@ struct PixelCatMini: View {
         return pose
     }
 }
+
+// MARK: - Closed notch: the cat fetches the Claude spark
+
+/// Every so often while Claude works, the closed-notch cat crosses under the
+/// notch, grabs the spinning Claude spark, carries it back to its corner and
+/// drops it, and the spark rolls home to the spinner slot like a ball of
+/// yarn. On a display with a physical notch the cat passes behind the camera
+/// housing, as if through a tunnel.
+///
+/// Drawn as an overlay over the whole live-activity row. The notch is black,
+/// so black rectangles over the side slots hide the regular cat and spinner
+/// while the scene plays, and the scene starts and ends on their exact poses.
+struct NotchCatFetch: View {
+    let leftWidth: CGFloat
+    let centerWidth: CGFloat
+    let rightWidth: CGFloat
+    let height: CGFloat
+    let catHeight: CGFloat
+    let enabled: Bool
+
+    static let cycle: TimeInterval = 45
+    static let walkOut: TimeInterval = 2.6
+    static let grab: TimeInterval = 0.5
+    static let walkBack: TimeInterval = 2.6
+    static let roll: TimeInterval = 1.6
+    static var sceneLength: TimeInterval { walkOut + grab + walkBack + roll }
+
+    private static let orange = Color(red: 0.85, green: 0.47, blue: 0.34)
+
+    var body: some View {
+        if enabled, !PixelCatSprites.cats.isEmpty {
+            TimelineView(.animation) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let local = t.truncatingRemainder(dividingBy: Self.cycle)
+                if local < Self.sceneLength, let cat = PixelCatSprites.cat(at: t) {
+                    scene(cat: cat, local: local, t: t)
+                }
+            }
+            .allowsHitTesting(false)
+        }
+    }
+
+    private struct Frame {
+        var pose: CatPose
+        var spark: (x: CGFloat, y: CGFloat, spin: Double)?
+        var coverRight: Bool
+    }
+
+    private func scene(cat: PixelCat, local: TimeInterval, t: TimeInterval) -> some View {
+        let frame = compute(cat: cat, local: local, t: t)
+        let sparkSize = catHeight * 0.5
+        return ZStack(alignment: .leading) {
+            Rectangle().fill(.black)
+                .frame(width: leftWidth, height: height)
+            if frame.coverRight {
+                Rectangle().fill(.black)
+                    .frame(width: rightWidth, height: height)
+                    .offset(x: leftWidth + centerWidth)
+            }
+            if let spark = frame.spark {
+                ClaudeSpark()
+                    .fill(Self.orange)
+                    .frame(width: sparkSize, height: sparkSize)
+                    .rotationEffect(.degrees(spark.spin))
+                    .shadow(color: Self.orange.opacity(0.5), radius: 3)
+                    .offset(x: spark.x, y: spark.y)
+            }
+            CatPoseView(pose: frame.pose, height: catHeight, aspect: cat.aspect)
+        }
+        .frame(width: leftWidth + centerWidth + rightWidth, height: height, alignment: .leading)
+    }
+
+    private func compute(cat: PixelCat, local: TimeInterval, t: TimeInterval) -> Frame {
+        let catWidth = catHeight * cat.aspect
+        let sparkSize = catHeight * 0.5
+        let home = (leftWidth - catWidth) / 2
+        let spinnerX = leftWidth + centerWidth + rightWidth / 2 - sparkSize / 2
+        let target = spinnerX + sparkSize / 2 - catWidth * 0.95
+        let mouthY = -catHeight * 0.15
+        let groundY = catHeight / 2 - sparkSize / 2
+        let idleSpin = t * 140
+
+        var pose = CatPose(image: cat.idle, x: home)
+        let grabEnd = Self.walkOut + Self.grab
+        let backEnd = grabEnd + Self.walkBack
+
+        if local < Self.walkOut {
+            // Walk right, under the notch, toward the spinner.
+            let u = CatMoves.smooth(local / Self.walkOut)
+            pose.x = home + (target - home) * CGFloat(u)
+            CatMoves.applyWalk(&pose, cat, t, fps: CatMoves.runFPS)
+            pose.y = CatMoves.stepBob(t, height: catHeight, rate: 4)
+            return Frame(pose: pose, spark: nil, coverRight: false)
+        }
+
+        if local < grabEnd {
+            // Pounce and take it: the spark jumps from its slot to the mouth.
+            let u = (local - Self.walkOut) / Self.grab
+            pose.x = target
+            pose.y = CatMoves.hop(u, height: catHeight * 0.15)
+            pose.image = cat.walk[min(2, cat.walk.count - 1)]
+            let mouthX = target + catWidth * 0.8 - sparkSize * 0.3
+            let e = CGFloat(CatMoves.smooth(u))
+            let sparkX = spinnerX + (mouthX - spinnerX) * e
+            return Frame(pose: pose, spark: (sparkX, mouthY * e + pose.y * e, idleSpin), coverRight: true)
+        }
+
+        if local < backEnd {
+            // Carry it back home, facing left.
+            let u = CatMoves.smooth((local - grabEnd) / Self.walkBack)
+            pose.x = target + (home - target) * CGFloat(u)
+            pose.facingRight = false
+            CatMoves.applyWalk(&pose, cat, t, fps: CatMoves.runFPS)
+            pose.y = CatMoves.stepBob(t, height: catHeight, rate: 4)
+            let sparkX = pose.x - sparkSize * 0.35
+            return Frame(pose: pose, spark: (sparkX, mouthY + pose.y, idleSpin), coverRight: true)
+        }
+
+        // Drop it and watch it roll home to the spinner slot.
+        let u = (local - backEnd) / Self.roll
+        pose.facingRight = true
+        pose.scaleY = CatMoves.breathe(t)
+        let dropX = home - sparkSize * 0.35
+        let fall = min(1, u / 0.15)
+        let rollU = CatMoves.smooth(max(0, (u - 0.15) / 0.85))
+        let sparkX = dropX + (spinnerX - dropX) * CGFloat(rollU)
+        let sparkY = mouthY + (groundY - mouthY) * CGFloat(fall)
+        // Rolling spin follows distance travelled over the radius.
+        let spin = Double(sparkX - dropX) / Double(sparkSize / 2) * 180 / Double.pi
+        return Frame(pose: pose, spark: (sparkX, sparkY, spin), coverRight: true)
+    }
+}

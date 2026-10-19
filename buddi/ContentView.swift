@@ -887,6 +887,18 @@ extension ContentView {
             }
             .frame(width: sideWidth + 8, height: notchContentHeight)
         }
+        // Periodic fetch scene: the cat crosses under the notch, takes the
+        // Claude spark and brings it back (only while Claude is working).
+        .overlay(alignment: .leading) {
+            NotchCatFetch(
+                leftWidth: sideWidth + 8 + (hasPending ? 18 : 0),
+                centerWidth: centerWidth,
+                rightWidth: sideWidth + 8,
+                height: notchContentHeight,
+                catHeight: min(notchContentHeight * 0.85, 20),
+                enabled: isProcessing && !hasPending
+            )
+        }
         .frame(height: vm.effectiveClosedNotchHeight + (isHovering ? 8 : 0), alignment: .center)
     }
 

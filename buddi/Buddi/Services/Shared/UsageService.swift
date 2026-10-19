@@ -123,6 +123,7 @@ final class UsageService: ObservableObject {
             do {
                 let result = try await Self.fetchUsage(token: token)
                 usage = result
+                UsageAlertMonitor.shared.record(result)
                 consecutiveFailures = 0
                 backoffCount = 0
                 currentInterval = baseInterval

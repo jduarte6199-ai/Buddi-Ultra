@@ -36,11 +36,13 @@ struct SessionPopupBubble: View {
     }
 
     private var accent: Color {
+        if popup.kind == .usage { return .usageAlert }
         if isMeeting { return Color(red: 0.35, green: 0.55, blue: 1.0) }
         return isApproval ? TerminalColors.amber : .green
     }
 
     private var iconName: String {
+        if popup.kind == .usage { return "flame.circle.fill" }
         if isMeeting { return "calendar.circle.fill" }
         return isApproval ? "hand.raised.circle.fill" : "checkmark.circle.fill"
     }

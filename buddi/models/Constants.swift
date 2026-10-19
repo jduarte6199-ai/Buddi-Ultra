@@ -215,4 +215,9 @@ extension Defaults.Keys {
     static let slackInboxEnabled = Key<Bool>("slackInboxEnabled", default: true)
     static let clickUpInboxEnabled = Key<Bool>("clickUpInboxEnabled", default: true)
     static let hubTicketsInboxEnabled = Key<Bool>("hubTicketsInboxEnabled", default: true)
+    // Claude usage alerts: high-burn detection with a cooldown bar, and
+    // one-shot popups when the session or weekly limit crosses 75/80/90%.
+    static let highUsageAlertsEnabled = Key<Bool>("highUsageAlertsEnabled", default: true)
+    static let usageThresholdAlertsEnabled = Key<Bool>("usageThresholdAlertsEnabled", default: true)
+    static let usageAlertColorHex = Key<String>("usageAlertColorHex", default: "#F2B33D")
 }

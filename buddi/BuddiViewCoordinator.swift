@@ -54,6 +54,8 @@ enum SessionPopupKind: Equatable {
     case approval(toolName: String)
     /// A calendar event starts soon; tapping opens Calendar.
     case meeting
+    /// High Claude consumption or a usage threshold crossed.
+    case usage
 }
 
 /// Dynamic-island style banner shown on the closed notch when a Claude
@@ -362,7 +364,7 @@ class BuddiViewCoordinator: ObservableObject {
         withAnimation(.spring(response: 0.45, dampingFraction: 0.6)) {
             sessionDonePopup = popup
         }
-        let duration: TimeInterval = popup.isApproval ? 12 : 5
+        let duration: TimeInterval = popup.isApproval ? 12 : (popup.kind == .usage ? 8 : 5)
         sessionDonePopupTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(duration))
             guard let self = self, !Task.isCancelled else { return }

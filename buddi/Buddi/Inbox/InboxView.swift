@@ -49,6 +49,9 @@ private struct SessionActivitySection: View {
     @Default(.slackInboxEnabled) private var slackEnabled
     @Default(.clickUpInboxEnabled) private var clickUpEnabled
     @Default(.hubTicketsInboxEnabled) private var hubTicketsEnabled
+    @Default(.highUsageAlertsEnabled) private var highUsageAlerts
+    @Default(.usageThresholdAlertsEnabled) private var thresholdAlerts
+    @Default(.usageAlertColorHex) private var alertColorHex
     @State private var showsConfig = false
 
     private static let timeFormatter: DateFormatter = {
@@ -117,6 +120,22 @@ private struct SessionActivitySection: View {
                         Toggle("Hub Tickets", isOn: $hubTicketsEnabled)
                             .toggleStyle(.checkbox)
                             .font(.caption)
+                    }
+                    HStack(spacing: 10) {
+                        Text("Usage alerts:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Toggle("High usage", isOn: $highUsageAlerts)
+                            .toggleStyle(.checkbox)
+                            .font(.caption)
+                        Toggle("75/80/90%", isOn: $thresholdAlerts)
+                            .toggleStyle(.checkbox)
+                            .font(.caption)
+                        ColorPicker("Color", selection: Binding(
+                            get: { Color(hex: alertColorHex) ?? .usageAlert },
+                            set: { alertColorHex = $0.hexString }
+                        ), supportsOpacity: false)
+                        .font(.caption)
                     }
                     .onChange(of: slackEnabled) { _, _ in onSourcesChanged() }
                     .onChange(of: clickUpEnabled) { _, _ in onSourcesChanged() }

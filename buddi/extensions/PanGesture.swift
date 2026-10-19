@@ -33,6 +33,24 @@ extension View {
     }
 }
 
+extension View {
+    /// Upward swipe that coexists with taps and buttons: a trackpad scroll
+    /// up, or a mouse drag of at least 10pt (so plain clicks still click).
+    /// `action` receives the upward distance and the phase.
+    func swipeUp(action: @escaping (CGFloat, NSEvent.Phase) -> Void) -> some View {
+        self
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 10)
+                    .onChanged { value in
+                        let up = -value.translation.height
+                        if up > 0 { action(up, .changed) }
+                    }
+                    .onEnded { value in action(max(0, -value.translation.height), .ended) }
+            )
+            .background(ScrollMonitor(direction: .up, threshold: 4, axisDominance: 1.5, action: action))
+    }
+}
+
 private struct ScrollMonitor: NSViewRepresentable {
     let direction: PanDirection
     let threshold: CGFloat

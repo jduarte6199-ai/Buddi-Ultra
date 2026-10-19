@@ -57,6 +57,8 @@ struct BuddyTabView: View {
                     }
                 }
 
+                HighUsageCooldownBar()
+
                 MemoryUsageBars()
             }
             .frame(width: 100)
@@ -133,6 +135,48 @@ struct BuddyTabView: View {
         guard hovering != isSuppressing else { return }
         isSuppressing = hovering
         vm.setScrollGestureSuppression(hovering, token: suppressionToken)
+    }
+}
+
+/// Shown while a high-consumption cooldown runs: starts full when the burn
+/// is detected and drains right to left over the cooldown; detecting the
+/// burn again refills it. Color is the user's alert color (yellow default).
+private struct HighUsageCooldownBar: View {
+    @ObservedObject private var monitor = UsageAlertMonitor.shared
+
+    var body: some View {
+        if let start = monitor.cooldownStart, let end = monitor.cooldownEnd {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                let total = max(1, end.timeIntervalSince(start))
+                let remaining = max(0, end.timeIntervalSince(context.date))
+                if remaining > 0 {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "flame.fill")
+                                .font(.caption2)
+                            Text("High usage")
+                                .font(.caption)
+                            Spacer()
+                            Text(monitor.pacePerHour.map { "\(Int($0))%/h" } ?? "")
+                                .font(.caption)
+                        }
+                        .foregroundStyle(Color.usageAlert)
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.usageAlert.opacity(0.15))
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.usageAlert)
+                                    .frame(width: geo.size.width * remaining / total)
+                                    .animation(.linear(duration: 1), value: remaining)
+                            }
+                        }
+                        .frame(height: 4)
+                    }
+                    .help("Burning the 5h limit faster than it lasts. Cooldown \(UsageAlertMonitor.durationText(remaining)) left.")
+                }
+            }
+        }
     }
 }
 

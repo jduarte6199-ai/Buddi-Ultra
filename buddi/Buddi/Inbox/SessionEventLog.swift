@@ -41,6 +41,7 @@ final class SessionEventLog: ObservableObject {
         case .ready: kind = "ready"
         case .approval: kind = "approval"
         case .meeting: kind = "meeting"
+        case .usage: kind = "usage"
         }
         let event = NotchEventRecord(
             id: UUID(),

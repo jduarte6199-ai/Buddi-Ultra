@@ -29,6 +29,8 @@ struct ContentView: View {
     @State private var gestureProgress: CGFloat = .zero
 
     @State private var haptics: Bool = false
+    /// Upward drag of the session bubble; past the threshold it dismisses.
+    @State private var bubbleDragOffset: CGFloat = 0
 
     @Namespace var albumArtNamespace
 
@@ -220,6 +222,9 @@ struct ContentView: View {
                     onOpen: {
                         if popup.kind == .meeting {
                             NSWorkspace.shared.open(URL(string: "ical://")!)
+                        } else if popup.kind == .usage {
+                            coordinator.currentView = .buddy
+                            doOpen()
                         } else if let session = BuddiSessionBridge.shared.sessionMonitor.instances
                             .first(where: { $0.sessionId == popup.sessionId }) {
                             SessionAppFocuser.focus(session)
@@ -255,6 +260,19 @@ struct ContentView: View {
                     }
                 )
                 .padding(.top, 8)
+                // Swipe up to dismiss, like an iOS banner; the next queued
+                // notification drops in right after.
+                .offset(y: -bubbleDragOffset)
+                .opacity(1 - Double(min(0.7, bubbleDragOffset / 60)))
+                .swipeUp { distance, phase in
+                    if phase == .ended {
+                        let dismiss = bubbleDragOffset > 22 || distance > 22
+                        withAnimation(.smooth(duration: 0.2)) { bubbleDragOffset = 0 }
+                        if dismiss { coordinator.hideSessionDonePopup() }
+                    } else {
+                        bubbleDragOffset = min(distance, 60)
+                    }
+                }
                 .transition(.scale(scale: 0.4, anchor: .top).combined(with: .opacity))
                 .zIndex(5)
                 }

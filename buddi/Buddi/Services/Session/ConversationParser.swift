@@ -197,6 +197,13 @@ actor ConversationParser {
             }
         }
 
+        // The chat's real name, as shown on its tab in VS Code: the latest
+        // custom title (/rename, claude-name) or else the latest AI title.
+        // Cheap substring checks first; only matching lines are decoded.
+        if let title = Self.latestTitle(in: lines) {
+            summary = title
+        }
+
         return ConversationInfo(
             summary: summary,
             // Tool inputs keep their raw form (globs, paths); prose is cleaned
@@ -210,6 +217,26 @@ actor ConversationParser {
             firstUserMessage: firstUserMessage,
             lastUserMessageDate: lastUserMessageDate
         )
+    }
+
+    /// Latest `custom-title`, else latest `ai-title`, scanning from the end.
+    private static func latestTitle(in lines: [String]) -> String? {
+        var aiTitle: String?
+        for line in lines.reversed() {
+            let isCustom = line.contains("\"custom-title\"")
+            let isAI = aiTitle == nil && line.contains("\"ai-title\"")
+            guard isCustom || isAI,
+                  let data = line.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { continue }
+            if isCustom, let title = json["customTitle"] as? String, !title.isEmpty {
+                return title
+            }
+            if isAI, let title = json["aiTitle"] as? String, !title.isEmpty {
+                aiTitle = title
+            }
+        }
+        return aiTitle
     }
 
     /// Prefixes marking injected/meta content that must never become a chat

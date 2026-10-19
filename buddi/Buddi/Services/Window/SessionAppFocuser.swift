@@ -68,12 +68,16 @@ enum SessionAppFocuser {
             }
 
             let projectFolder = URL(fileURLWithPath: projectRoot(for: session.cwd)).lastPathComponent
+            let chatTitle = session.displayTitle
 
-            // With Accessibility granted, raise the exact window whose title
-            // carries the project folder; works for any host app and never
-            // opens new windows. Silently skipped without the permission.
-            let raisedViaAX = await MainActor.run {
-                raiseWindowViaAX(hostPid: hostPid, matching: projectFolder)
+            // With Accessibility granted: find the editor tab named after this
+            // chat (Claude Code tabs carry the session title), raise its
+            // window and press the tab. Failing that, raise the window whose
+            // title carries the project folder. Never opens anything new.
+            let raisedViaAX = await MainActor.run { () -> Bool in
+                guard ensureAccessibility() else { return false }
+                return pressChatTab(hostPid: hostPid, title: chatTitle)
+                    || raiseWindowViaAX(hostPid: hostPid, matching: projectFolder)
             }
 
             // For VS Code-style editors, `<cli> <folder>` raises the window
@@ -119,50 +123,108 @@ enum SessionAppFocuser {
                     app.activate(options: [.activateIgnoringOtherApps])
                 }
 
-                // Sessions started from the Claude Code extension can be
-                // opened exactly: its URI handler takes ?session=<id> and
-                // brings that chat up in the editor. Sent after the right
-                // window is raised so the window that receives it is the one
-                // with this project. Terminal sessions are skipped on purpose:
-                // opening those in the extension would resume them a second time.
-                if let url = exactSessionURL(for: session, hostBundleId: app.bundleIdentifier) {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                        NSWorkspace.shared.open(url)
-                    }
-                }
             }
         }
     }
 
-    /// `<scheme>://anthropic.claude-code/open?session=<id>` for extension
-    /// sessions in a VS Code-family editor, else nil.
-    private static func exactSessionURL(for session: SessionState, hostBundleId: String?) -> URL? {
-        let schemes: [String: String] = [
-            "com.microsoft.VSCode": "vscode",
-            "com.microsoft.VSCodeInsiders": "vscode-insiders",
-            "com.todesktop.230313mzl4w4u92": "cursor",
-            "com.exafunction.windsurf": "windsurf",
-            "com.vscodium": "vscodium",
-        ]
-        guard let bundleId = hostBundleId,
-              let scheme = schemes[bundleId],
-              let pid = session.pid,
-              isExtensionSession(pid: pid),
-              UUID(uuidString: session.sessionId) != nil
-        else { return nil }
-        return URL(string: "\(scheme)://anthropic.claude-code/open?session=\(session.sessionId)")
+    private static var accessibilityPrompted = false
+
+    /// True when Buddi may read other apps' windows. The first time it is
+    /// missing, macOS's own dialog points to System Settings (once per run).
+    @MainActor
+    private static func ensureAccessibility() -> Bool {
+        if AXIsProcessTrusted() { return true }
+        if !accessibilityPrompted {
+            accessibilityPrompted = true
+            let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
+            _ = AXIsProcessTrustedWithOptions([key: true] as CFDictionary)
+        }
+        return false
     }
 
-    /// Claude Code records each live process in ~/.claude/sessions/<pid>.json
-    /// with its entrypoint; the extension's sessions say "claude-vscode".
-    private static func isExtensionSession(pid: Int) -> Bool {
-        let file = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/sessions/\(pid).json")
-        guard let data = try? Data(contentsOf: file),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let entrypoint = json["entrypoint"] as? String
+    /// Find the editor tab whose label is this chat's title, raise its window
+    /// and select it. VS Code truncates long tab labels with "…", so a label
+    /// matches when the full title starts with it.
+    @MainActor
+    private static func pressChatTab(hostPid: Int, title: String) -> Bool {
+        let wanted = title.trimmingCharacters(in: .whitespaces)
+        guard wanted.count >= 3 else { return false }
+        let app = AXUIElementCreateApplication(pid_t(hostPid))
+        // Chromium builds its accessibility tree only when asked.
+        AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &windowsRef) == .success,
+              let windows = windowsRef as? [AXUIElement]
         else { return false }
-        return entrypoint.hasPrefix("claude-vscode")
+
+        for window in windows {
+            var budget = 8000
+            guard let tab = findTab(in: window, matching: wanted, depth: 0, budget: &budget) else { continue }
+            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+            AXUIElementPerformAction(tab, kAXPressAction as CFString)
+            NSLog("[SessionAppFocuser] selected chat tab: %@", wanted)
+            return true
+        }
+        return false
+    }
+
+    @MainActor
+    private static func findTab(in element: AXUIElement, matching title: String,
+                                depth: Int, budget: inout Int,
+                                insideWebArea: Bool = false) -> AXUIElement? {
+        budget -= 1
+        guard depth < 32, budget > 0 else { return nil }
+        let role = axString(element, kAXRoleAttribute) ?? ""
+        // Tabs live in the workbench chrome. Nested web areas (each chat's
+        // webview, thousands of nodes), file trees and tables never hold
+        // editor tabs, and walking them is what made the search take seconds.
+        if role == "AXWebArea" && insideWebArea { return nil }
+        if role == "AXOutline" || role == "AXTable" { return nil }
+        if axString(element, kAXSubroleAttribute) == "AXTabButton" {
+            return tabLabels(element).contains(where: { labelMatches($0, title: title) }) ? element : nil
+        }
+        var childrenRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef)
+        for child in (childrenRef as? [AXUIElement]) ?? [] {
+            if let found = findTab(in: child, matching: title, depth: depth + 1, budget: &budget,
+                                   insideWebArea: insideWebArea || role == "AXWebArea") {
+                return found
+            }
+        }
+        return nil
+    }
+
+    /// Text inside a tab button (its own attributes and a few levels down).
+    @MainActor
+    private static func tabLabels(_ element: AXUIElement, depth: Int = 0) -> [String] {
+        guard depth < 4 else { return [] }
+        var labels = [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute]
+            .compactMap { axString(element, $0) }
+            .filter { !$0.isEmpty }
+        var childrenRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &childrenRef)
+        for child in (childrenRef as? [AXUIElement]) ?? [] {
+            labels += tabLabels(child, depth: depth + 1)
+        }
+        return labels
+    }
+
+    private static func labelMatches(_ label: String, title: String) -> Bool {
+        // "Chat name…, Window 2: Editor Group 1" -> "Chat name"
+        var text = label.components(separatedBy: ", Window ").first ?? label
+        text = text.trimmingCharacters(in: .whitespaces)
+        let truncated = text.hasSuffix("…")
+        if truncated { text = String(text.dropLast()).trimmingCharacters(in: .whitespaces) }
+        guard text.count >= 3 else { return false }
+        return truncated ? title.hasPrefix(text) : title == text
+    }
+
+    @MainActor
+    private static func axString(_ element: AXUIElement, _ attribute: String) -> String? {
+        var ref: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, attribute as CFString, &ref)
+        return ref as? String
     }
 
     /// Raise the host app window whose title mentions the project folder.

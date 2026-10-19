@@ -41,7 +41,8 @@ final class BuddiSessionBridge: ObservableObject {
                 case .chat:
                     height = 500
                 case .instances, .menu:
-                    height = openNotchSize.height
+                    // Room for the filter strip plus three chat rows.
+                    height = openNotchSize.height + 64
                 }
 
                 if BuddiViewCoordinator.shared.buddyPanelHeight != height {

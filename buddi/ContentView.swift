@@ -120,10 +120,14 @@ struct ContentView: View {
                         vm.effectiveClosedNotchHeight == 0 ? 10 : 0
                     )
                 
+                // Top-aligned: if a tab's content ever runs taller than the
+                // panel, the overflow goes to the bottom edge instead of being
+                // split and pushing the header (tabs) off the top of the screen.
                 mainLayout
                     .frame(height: vm.notchState == .open
                            ? vm.notchSize.height
-                           : coordinator.helloAnimationRunning ? 150 : nil)
+                           : coordinator.helloAnimationRunning ? 150 : nil,
+                           alignment: .top)
                     .conditionalModifier(true) { view in
                         let openAnimation = Animation.spring(response: 0.42, dampingFraction: 0.8, blendDuration: 0)
                         let closeAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0, blendDuration: 0)

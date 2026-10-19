@@ -47,7 +47,7 @@ struct BuddyTabView: View {
     private var homeContent: some View {
         HStack(alignment: .top, spacing: 15) {
             VStack(spacing: 3) {
-                PixelCatParade(width: 100)
+                PixelCatParade(width: 100, catHeight: 32)
 
                 if usageService.isAvailable {
                     TimelineView(.periodic(from: .now, by: 60)) { context in
@@ -67,7 +67,7 @@ struct BuddyTabView: View {
             )
             .frame(maxWidth: .infinity)
         }
-        .padding(.top, 10)
+        .padding(.top, 4)
         .padding(.leading, 5)
         .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
         .blur(radius: vm.notchState == .closed ? 30 : 0)

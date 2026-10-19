@@ -2,28 +2,33 @@
 //  PixelCatParade.swift
 //  Buddi
 //
-//  The Buddy tab's mascot strip: 8-bit cats take turns crossing the little
-//  column. Each one walks in from a side, sits down in the middle for a
-//  moment, then walks out the other side; the next cat comes the other way.
-//  Sprite sheets are horizontal strips of 187x126 cells (walk) plus a single
-//  idle cell, bundled under Resources/Pets.
+//  8-bit cat mascots. One shared clock picks whose turn it is, so the cat in
+//  the closed notch and the cat in the expanded panel are always the same.
+//
+//  Only two sprite sheets exist per cat (a walk strip and one sitting cell),
+//  so every other move is built from those frames: walk with a step bob, run,
+//  sit and breathe, sleep with floating z's, hop, jump with a heart, peek up
+//  from the bottom edge, pounce, and turn around. The panel plays a seeded
+//  random routine per turn; the notch cat reacts to Claude's state instead.
 //
 
 import AppKit
 import SwiftUI
 
-struct PixelCatParade: View {
-    let width: CGFloat
-    var catHeight: CGFloat = 44
+// MARK: - Sprites
 
-    private struct Cat {
-        let id: String
-        let name: String
-        let walk: [NSImage]
-        let idle: NSImage?
-    }
+struct PixelCat {
+    let id: String
+    let name: String
+    /// Frames cropped to the cat's silhouette (cells are mostly padding).
+    let walk: [NSImage]
+    let idle: NSImage
+    /// Width / height of the cropped silhouette.
+    let aspect: CGFloat
+}
 
-    private static let roster: [(id: String, name: String, frames: Int)] = [
+enum PixelCatSprites {
+    static let roster: [(id: String, name: String, frames: Int)] = [
         ("titi", "Titi", 7),
         ("owi", "Owi", 7),
         ("salem", "Salem", 7),
@@ -31,173 +36,47 @@ struct PixelCatParade: View {
         ("gin", "Gin", 6),
         ("tonic", "Tonic", 6),
     ]
-    private static let cellSize = CGSize(width: 187, height: 126)
-    private static let walkSpeed: CGFloat = 20          // points per second
-    private static let sitDuration: TimeInterval = 2.6
-    private static let walkFPS: Double = 9
 
-    /// Sliced once per launch; the render path never touches the disk.
-    private static let cats: [Cat] = roster.compactMap { entry in
-        guard let sheet = loadImage("pet-\(entry.id)-walk") else { return nil }
-        let frames = slice(sheet, count: entry.frames)
-        guard !frames.isEmpty else { return nil }
-        return Cat(id: entry.id, name: entry.name, walk: frames, idle: loadImage("pet-\(entry.id)-idle"))
+    /// How long each cat's turn lasts, in both the notch and the panel.
+    static let turnDuration: TimeInterval = 40
+
+    /// Sliced and cropped once per launch; render paths never touch the disk.
+    static let cats: [PixelCat] = roster.compactMap(load)
+
+    static func turnIndex(at t: TimeInterval) -> Int {
+        Int(t / turnDuration)
     }
 
-    private var catWidth: CGFloat {
-        catHeight * Self.cellSize.width / Self.cellSize.height
+    static func cat(at t: TimeInterval) -> PixelCat? {
+        cats.isEmpty ? nil : cats[turnIndex(at: t) % cats.count]
     }
 
-    var body: some View {
-        VStack(spacing: 2) {
-            if Self.cats.isEmpty {
-                Color.clear.frame(width: width, height: catHeight)
-            } else {
-                TimelineView(.animation(minimumInterval: 1.0 / 24)) { context in
-                    let state = parade(at: context.date.timeIntervalSinceReferenceDate)
-                    VStack(spacing: 2) {
-                        ZStack(alignment: .leading) {
-                            Image(nsImage: state.image)
-                                .resizable()
-                                .interpolation(.none)
-                                .frame(width: catWidth, height: catHeight)
-                                .scaleEffect(x: state.facingRight ? 1 : -1, y: 1)
-                                .offset(x: state.x)
-                        }
-                        .frame(width: width, height: catHeight, alignment: .leading)
-                        .clipped()
-
-                        Text(state.name)
-                            .font(.caption2.weight(.medium).monospaced())
-                            .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34).opacity(0.85))
-                    }
-                }
-            }
-        }
-    }
-
-    private struct ParadeState {
-        let image: NSImage
-        let x: CGFloat
-        let facingRight: Bool
-        let name: String
-    }
-
-    /// Pure function of time: which cat, where, which frame.
-    private func parade(at t: TimeInterval) -> ParadeState {
-        let startX = -catWidth
-        let centerX = (width - catWidth) / 2
-        let endX = width
-        let walkIn = TimeInterval((centerX - startX) / Self.walkSpeed)
-        let walkOut = TimeInterval((endX - centerX) / Self.walkSpeed)
-        let pass = walkIn + Self.sitDuration + walkOut
-
-        let passIndex = Int(t / pass)
-        let local = t - Double(passIndex) * pass
-        let cat = Self.cats[passIndex % Self.cats.count]
-        let facingRight = passIndex % 2 == 0
-        let walkFrame = cat.walk[Int(t * Self.walkFPS) % cat.walk.count]
-
-        var x: CGFloat
-        var image = walkFrame
-        if local < walkIn {
-            x = startX + CGFloat(local) * Self.walkSpeed
-        } else if local < walkIn + Self.sitDuration {
-            x = centerX
-            image = cat.idle ?? cat.walk[0]
-        } else {
-            x = centerX + CGFloat(local - walkIn - Self.sitDuration) * Self.walkSpeed
-        }
-        if !facingRight {
-            x = width - catWidth - x
-        }
-        return ParadeState(image: image, x: x, facingRight: facingRight, name: cat.name)
-    }
-
-    // MARK: - Loading
-
-    private static func loadImage(_ name: String) -> NSImage? {
-        let url = Bundle.main.url(forResource: name, withExtension: "png")
-            ?? Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "Pets")
-        return url.flatMap { NSImage(contentsOf: $0) }
-    }
-
-    private static func slice(_ sheet: NSImage, count: Int) -> [NSImage] {
-        guard let cg = sheet.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return [] }
-        let cellWidth = cg.width / count
-        return (0..<count).compactMap { index in
-            let rect = CGRect(x: index * cellWidth, y: 0, width: cellWidth, height: cg.height)
-            guard let frame = cg.cropping(to: rect) else { return nil }
-            return NSImage(cgImage: frame, size: NSSize(width: cellWidth, height: cg.height))
-        }
-    }
-}
-
-// MARK: - Mini cat for the closed notch
-
-/// One cat in the closed notch, in place of the old face glyph. The notch
-/// strip is only ~20pt tall, so frames are cropped to the cat's actual
-/// silhouette (the sprite cells are mostly transparent padding). Walks in
-/// place while Claude is working, sits while it waits; cats take turns.
-struct PixelCatMini: View {
-    let height: CGFloat
-    let walking: Bool
-
-    private struct MiniCat {
-        let walk: [NSImage]
-        let idle: NSImage
-        let aspect: CGFloat
-    }
-
-    private static let turnDuration: TimeInterval = 30
-    private static let walkFPS: Double = 9
-
-    private static let cats: [MiniCat] = PixelCatSprites.roster.compactMap { entry in
-        guard let walkSheet = PixelCatSprites.image("pet-\(entry.id)-walk"),
-              let walkCG = walkSheet.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        else { return nil }
-        let cells = PixelCatSprites.cells(of: walkCG, count: entry.frames)
-        let idleCG = PixelCatSprites.image("pet-\(entry.id)-idle")?
+    private static func load(_ entry: (id: String, name: String, frames: Int)) -> PixelCat? {
+        guard let sheet = image("pet-\(entry.id)-walk")?
             .cgImage(forProposedRect: nil, context: nil, hints: nil)
-        let all = cells + [idleCG].compactMap { $0 }
-        // One shared crop box per cat so frames don't jitter between sizes.
-        guard let box = all.compactMap(PixelCatSprites.opaqueBounds).reduce(nil, { acc, rect in
-            acc.map { $0.union(rect) } ?? rect
-        }) else { return nil }
+        else { return nil }
+        let cells = Self.cells(of: sheet, count: entry.frames)
+        let idleCG = image("pet-\(entry.id)-idle")?
+            .cgImage(forProposedRect: nil, context: nil, hints: nil)
+        // One shared crop box per cat so frames never jitter between sizes.
+        let boxes = (cells + [idleCG].compactMap { $0 }).compactMap(opaqueBounds)
+        guard let first = boxes.first else { return nil }
+        let box = boxes.dropFirst().reduce(first) { $0.union($1) }
         let crop: (CGImage) -> NSImage? = { image in
-            image.cropping(to: box).map { NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height)) }
+            image.cropping(to: box).map {
+                NSImage(cgImage: $0, size: NSSize(width: $0.width, height: $0.height))
+            }
         }
         let walk = cells.compactMap(crop)
         guard !walk.isEmpty else { return nil }
-        return MiniCat(
+        return PixelCat(
+            id: entry.id,
+            name: entry.name,
             walk: walk,
             idle: idleCG.flatMap(crop) ?? walk[0],
             aspect: box.width / max(box.height, 1)
         )
     }
-
-    var body: some View {
-        if Self.cats.isEmpty {
-            Color.clear.frame(width: height, height: height)
-        } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 18)) { context in
-                let t = context.date.timeIntervalSinceReferenceDate
-                let cat = Self.cats[Int(t / Self.turnDuration) % Self.cats.count]
-                let image = walking ? cat.walk[Int(t * Self.walkFPS) % cat.walk.count] : cat.idle
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.none)
-                    .frame(width: height * cat.aspect, height: height)
-            }
-        }
-    }
-}
-
-/// Shared sprite loading for the parade and the mini cat.
-enum PixelCatSprites {
-    static let roster: [(id: String, frames: Int)] = [
-        ("titi", 7), ("owi", 7), ("salem", 7), ("snowy", 7), ("gin", 6), ("tonic", 6),
-    ]
 
     static func image(_ name: String) -> NSImage? {
         let url = Bundle.main.url(forResource: name, withExtension: "png")
@@ -230,7 +109,371 @@ enum PixelCatSprites {
             }
         }
         guard maxX >= minX else { return nil }
-        // Bitmap rows run top-down here, matching CGImage.cropping coordinates.
+        // Bitmap rows run top-down, matching CGImage.cropping coordinates.
         return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+    }
+}
+
+// MARK: - One rendered pose
+
+/// Everything needed to draw the cat at one instant.
+struct CatPose {
+    var image: NSImage
+    var x: CGFloat = 0
+    var y: CGFloat = 0            // negative = up
+    var facingRight = true
+    var scaleY: CGFloat = 1
+    var scale: CGFloat = 1
+    var rotation: Double = 0
+    var overlay: CatOverlay = .none
+}
+
+enum CatOverlay: Equatable {
+    case none
+    case sleeping(phase: Double)  // floating z's
+    case heart(progress: Double)  // rising, fading heart
+    case alert                    // amber "!"
+}
+
+/// Draws a pose: the sprite plus its overlay, pixel-crisp.
+struct CatPoseView: View {
+    let pose: CatPose
+    let height: CGFloat
+    let aspect: CGFloat
+
+    var body: some View {
+        let width = height * aspect
+        Image(nsImage: pose.image)
+            .resizable()
+            .interpolation(.none)
+            .frame(width: width, height: height)
+            .scaleEffect(x: pose.facingRight ? 1 : -1, y: 1)
+            .scaleEffect(x: 1, y: pose.scaleY, anchor: .bottom)
+            .scaleEffect(pose.scale, anchor: .bottom)
+            .rotationEffect(.degrees(pose.rotation), anchor: .bottom)
+            .overlay(alignment: .topTrailing) { overlay(width: width) }
+            .offset(x: pose.x, y: pose.y)
+    }
+
+    @ViewBuilder
+    private func overlay(width: CGFloat) -> some View {
+        let fontSize = max(7, height * 0.32)
+        switch pose.overlay {
+        case .none:
+            EmptyView()
+        case .sleeping(let phase):
+            ZStack {
+                ForEach(0..<2, id: \.self) { i in
+                    let p = (phase + Double(i) * 0.5).truncatingRemainder(dividingBy: 1)
+                    Text("z")
+                        .font(.system(size: fontSize * (0.7 + 0.4 * p), weight: .bold, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.8 * (1 - p)))
+                        .offset(x: CGFloat(p) * 6, y: -CGFloat(p) * height * 0.6)
+                }
+            }
+            .offset(x: 2, y: -2)
+        case .heart(let progress):
+            Text("♥")
+                .font(.system(size: fontSize * (0.8 + 0.3 * progress)))
+                .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.55).opacity(1 - progress))
+                .offset(x: -width * 0.3, y: -CGFloat(progress) * height * 0.7)
+        case .alert:
+            Text("!")
+                .font(.system(size: fontSize * 1.1, weight: .heavy, design: .monospaced))
+                .foregroundStyle(TerminalColors.amber)
+                .offset(x: 3, y: -3)
+        }
+    }
+}
+
+// MARK: - Moves (shared by the panel routine and the notch cat)
+
+enum CatMoves {
+    static let walkFPS: Double = 9
+    static let runFPS: Double = 16
+
+    static func walkFrame(_ cat: PixelCat, _ t: TimeInterval, fps: Double = walkFPS) -> NSImage {
+        cat.walk[Int(t * fps) % cat.walk.count]
+    }
+
+    /// Two-step vertical bob while walking, like the store's pet-bob.
+    static func stepBob(_ t: TimeInterval, height: CGFloat) -> CGFloat {
+        Int(t / 0.23) % 2 == 0 ? 0 : -height * 0.04
+    }
+
+    static func breathe(_ t: TimeInterval, speed: Double = 2.2) -> CGFloat {
+        1 + 0.025 * CGFloat(sin(t * speed))
+    }
+
+    /// Parabolic hop, 0...1 progress -> negative y.
+    static func hop(_ u: Double, height: CGFloat) -> CGFloat {
+        -height * CGFloat(sin(Double.pi * max(0, min(1, u))))
+    }
+}
+
+// MARK: - Expanded panel: a little routine per turn
+
+struct PixelCatParade: View {
+    let width: CGFloat
+    var catHeight: CGFloat = 32
+
+    var body: some View {
+        if PixelCatSprites.cats.isEmpty {
+            Color.clear.frame(width: width, height: catHeight)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 24)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let cat = PixelCatSprites.cat(at: t)!
+                let pose = CatRoutine.pose(for: cat, at: t, width: width, height: catHeight)
+                VStack(spacing: 2) {
+                    ZStack(alignment: .bottomLeading) {
+                        CatPoseView(pose: pose, height: catHeight, aspect: cat.aspect)
+                    }
+                    .frame(width: width, height: catHeight + 8, alignment: .bottomLeading)
+                    .clipped()
+
+                    Text(cat.name)
+                        .font(.caption2.weight(.medium).monospaced())
+                        .foregroundStyle(Color(red: 0.85, green: 0.47, blue: 0.34).opacity(0.85))
+                }
+            }
+        }
+    }
+}
+
+/// Seeded, deterministic choreography: the same turn always plays the same
+/// routine, so redraws never jump, and every turn is a different show.
+@MainActor
+enum CatRoutine {
+    enum Move {
+        case walk(to: CGFloat)
+        case run(to: CGFloat)
+        case sit(TimeInterval)
+        case sleep(TimeInterval)
+        case hop(count: Int)
+        case jumpHeart
+        case peek
+        case pounce(TimeInterval)
+        case turnAround
+
+        static let walkSpeed: CGFloat = 20
+        static let runSpeed: CGFloat = 48
+    }
+
+    struct Step {
+        let move: Move
+        let start: TimeInterval
+        let duration: TimeInterval
+        let fromX: CGFloat
+        let facingRight: Bool
+    }
+
+    private static var cacheKey: (turn: Int, width: CGFloat, catWidth: CGFloat)?
+    private static var cachedSteps: [Step] = []
+
+    static func pose(for cat: PixelCat, at t: TimeInterval, width: CGFloat, height: CGFloat) -> CatPose {
+        let catWidth = height * cat.aspect
+        let turn = PixelCatSprites.turnIndex(at: t)
+        if cacheKey?.turn != turn || cacheKey?.width != width || cacheKey?.catWidth != catWidth {
+            cachedSteps = plan(turn: turn, width: width, catWidth: catWidth)
+            cacheKey = (turn, width, catWidth)
+        }
+        let local = t - Double(turn) * PixelCatSprites.turnDuration
+        let step = cachedSteps.last { $0.start <= local } ?? cachedSteps[0]
+        let u = step.duration > 0 ? min(1, (local - step.start) / step.duration) : 1
+        return render(step, u: u, t: t, cat: cat, height: height)
+    }
+
+    // MARK: Planning
+
+    private static func duration(of move: Move, from x: CGFloat) -> TimeInterval {
+        switch move {
+        case .walk(let to): return TimeInterval(abs(to - x) / Move.walkSpeed)
+        case .run(let to): return TimeInterval(abs(to - x) / Move.runSpeed)
+        case .sit(let d), .sleep(let d), .pounce(let d): return d
+        case .hop(let n): return Double(n) * 0.5
+        case .jumpHeart: return 1.2
+        case .peek: return 3.6
+        case .turnAround: return 0.8
+        }
+    }
+
+    private static func endX(of move: Move, from x: CGFloat) -> CGFloat {
+        switch move {
+        case .walk(let to), .run(let to): return to
+        default: return x
+        }
+    }
+
+    private static func plan(turn: Int, width: CGFloat, catWidth: CGFloat) -> [Step] {
+        var rng = SplitMix64(seed: UInt64(truncatingIfNeeded: turn &* 2_654_435_761))
+        let total = PixelCatSprites.turnDuration
+        let maxX = max(0, width - catWidth)
+        let enterFromLeft = turn % 2 == 0
+        let offLeft = -catWidth - 2
+        let offRight = width + 2
+
+        var steps: [Step] = []
+        var clock: TimeInterval = 0
+        var x = enterFromLeft ? offLeft : offRight
+        var facingRight = enterFromLeft
+
+        func add(_ move: Move) {
+            let d = duration(of: move, from: x)
+            let to = endX(of: move, from: x)
+            if to != x { facingRight = to > x }
+            steps.append(Step(move: move, start: clock, duration: d, fromX: x, facingRight: facingRight))
+            clock += d
+            x = to
+            if case .turnAround = move { facingRight.toggle() }
+        }
+
+        func randomX() -> CGFloat {
+            CGFloat(rng.nextUnit()) * maxX
+        }
+
+        // Enter.
+        add(.walk(to: randomX()))
+
+        // Fill the turn with random moves, keeping room to leave.
+        let exitAllowance: TimeInterval = 7
+        while clock < total - exitAllowance {
+            let move: Move
+            switch rng.nextUnit() {
+            case ..<0.18: move = .walk(to: randomX())
+            case ..<0.28: move = .run(to: randomX())
+            case ..<0.42: move = .sit(2 + rng.nextUnit() * 2)
+            case ..<0.52: move = .sleep(4 + rng.nextUnit() * 3)
+            case ..<0.62: move = .hop(count: 2 + Int(rng.nextUnit() * 2))
+            case ..<0.72: move = .jumpHeart
+            case ..<0.80: move = .peek
+            case ..<0.90: move = .pounce(1.8)
+            default: move = .turnAround
+            }
+            if clock + duration(of: move, from: x) > total - exitAllowance { break }
+            add(move)
+        }
+
+        // Leave by the edge it faces, padding with a sit so the exit ends on time.
+        let exitX = facingRight ? offRight : offLeft
+        let exitTime = duration(of: .walk(to: exitX), from: x)
+        let slack = total - clock - exitTime
+        if slack > 0.05 { add(.sit(slack)) }
+        add(.walk(to: exitX))
+        return steps
+    }
+
+    // MARK: Rendering
+
+    private static func render(_ step: Step, u: Double, t: TimeInterval, cat: PixelCat,
+                               height: CGFloat) -> CatPose {
+        var pose = CatPose(image: cat.idle, x: step.fromX, facingRight: step.facingRight)
+        let elapsed = u * step.duration
+
+        switch step.move {
+        case .walk(let to):
+            pose.x = step.fromX + (to - step.fromX) * CGFloat(u)
+            pose.image = CatMoves.walkFrame(cat, t)
+            pose.y = CatMoves.stepBob(t, height: height)
+        case .run(let to):
+            pose.x = step.fromX + (to - step.fromX) * CGFloat(u)
+            pose.image = CatMoves.walkFrame(cat, t, fps: CatMoves.runFPS)
+            pose.y = CatMoves.stepBob(t * 1.8, height: height)
+        case .sit:
+            pose.scaleY = CatMoves.breathe(t)
+        case .sleep:
+            pose.scaleY = CatMoves.breathe(t, speed: 1.2)
+            pose.overlay = .sleeping(phase: (t / 1.6).truncatingRemainder(dividingBy: 1))
+        case .hop:
+            let phase = (elapsed / 0.5).truncatingRemainder(dividingBy: 1)
+            pose.image = cat.walk[min(2, cat.walk.count - 1)]
+            pose.y = CatMoves.hop(phase, height: height * 0.22)
+        case .jumpHeart:
+            let jump = min(1, elapsed / 0.5)
+            pose.y = CatMoves.hop(jump, height: height * 0.3)
+            pose.scale = 1 + 0.06 * CGFloat(sin(Double.pi * jump))
+            pose.overlay = .heart(progress: min(1, elapsed / 1.1))
+        case .peek:
+            // Sink below the bottom edge, rise to look around, sink again.
+            let hidden = height + 8
+            let rise: CGFloat
+            switch u {
+            case ..<0.2: rise = CGFloat(u / 0.2)
+            case ..<0.8: rise = 1
+            default: rise = CGFloat((1 - u) / 0.2)
+            }
+            pose.y = hidden * (1 - rise)
+            pose.facingRight = u < 0.5 ? step.facingRight : !step.facingRight
+        case .pounce:
+            let wiggle = sin(elapsed * 9)
+            pose.image = cat.walk[0]
+            pose.x = step.fromX + CGFloat(wiggle) * 3
+            pose.rotation = wiggle * 4
+        case .turnAround:
+            pose.facingRight = u < 0.5 ? step.facingRight : !step.facingRight
+            pose.scaleY = CatMoves.breathe(t)
+        }
+        return pose
+    }
+}
+
+/// Tiny deterministic RNG so a turn's routine is reproducible.
+struct SplitMix64 {
+    private var state: UInt64
+    init(seed: UInt64) { state = seed }
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
+    }
+    mutating func nextUnit() -> Double {
+        Double(next() >> 11) / Double(1 << 53)
+    }
+}
+
+// MARK: - Closed notch: same cat, reacting to Claude
+
+/// The cat in the closed notch, in place of the old face glyph. Same cat as
+/// the panel (shared turn clock). Walks in place with a step bob while
+/// Claude works, hops with an amber "!" when a tool needs approval, jumps
+/// with a heart when a chat just finished, otherwise sits and breathes.
+struct PixelCatMini: View {
+    let height: CGFloat
+    let walking: Bool
+    var alert: Bool = false
+    var celebrate: Bool = false
+
+    var body: some View {
+        if PixelCatSprites.cats.isEmpty {
+            Color.clear.frame(width: height, height: height)
+        } else {
+            TimelineView(.animation(minimumInterval: 1.0 / 20)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let cat = PixelCatSprites.cat(at: t)!
+                CatPoseView(pose: pose(cat, t), height: height, aspect: cat.aspect)
+            }
+        }
+    }
+
+    private func pose(_ cat: PixelCat, _ t: TimeInterval) -> CatPose {
+        var pose = CatPose(image: cat.idle)
+        if celebrate {
+            let cycle = (t / 1.3).truncatingRemainder(dividingBy: 1)
+            pose.y = CatMoves.hop(min(1, cycle / 0.4), height: height * 0.12)
+            pose.overlay = .heart(progress: cycle)
+        } else if alert {
+            let cycle = (t / 0.7).truncatingRemainder(dividingBy: 1)
+            pose.image = cat.walk[min(2, cat.walk.count - 1)]
+            pose.y = CatMoves.hop(cycle, height: height * 0.1)
+            pose.overlay = .alert
+        } else if walking {
+            pose.image = CatMoves.walkFrame(cat, t)
+            pose.y = CatMoves.stepBob(t, height: height)
+        } else {
+            pose.scaleY = CatMoves.breathe(t)
+        }
+        return pose
     }
 }

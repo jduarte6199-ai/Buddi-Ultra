@@ -827,7 +827,10 @@ extension ContentView {
                 // Claude works, sits while a session waits.
                 PixelCatMini(
                     height: min(notchContentHeight * 0.85, 20),
-                    walking: isProcessing
+                    walking: isProcessing,
+                    alert: hasPending,
+                    celebrate: coordinator.sessionDonePopup.show
+                        && coordinator.sessionDonePopup.kind == .ready
                 )
                 if hasPending {
                     PermissionIndicatorIcon(

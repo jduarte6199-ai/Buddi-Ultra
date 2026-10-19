@@ -434,6 +434,24 @@ struct NotchHomeView: View {
         .transition(.opacity)
     }
 
+    /// "Next source" label revealed behind the card as it is dragged: swipe
+    /// up shows the next source below, swipe down the previous one above.
+    @ViewBuilder
+    private var sourceHint: some View {
+        let offset = vm.musicDragOffset
+        if offset != 0,
+           let target = MusicManager.shared.adjacentMediaSource(forward: offset < 0) {
+            Label(target.rawValue, systemImage: offset < 0 ? "chevron.up" : "chevron.down")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.white.opacity(min(1, Double(abs(offset)) / 30)))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.white.opacity(0.08 * min(1, Double(abs(offset)) / 30))))
+                .offset(y: offset < 0 ? -abs(offset) * 0.3 : abs(offset) * 0.3)
+                .allowsHitTesting(false)
+        }
+    }
+
     private var shouldShowCamera: Bool {
         Defaults[.showMirror] && webcamManager.cameraAvailable && vm.isCameraExpanded
     }
@@ -441,6 +459,13 @@ struct NotchHomeView: View {
     private var mainContent: some View {
         HStack(alignment: .top, spacing: (shouldShowCamera && Defaults[.showCalendar]) ? 10 : 15) {
             MusicPlayerView(albumArtNamespace: albumArtNamespace)
+                // Follows a vertical source swipe so the drag feels physical.
+                .offset(y: vm.musicDragOffset)
+                .scaleEffect(1 - min(0.06, abs(vm.musicDragOffset) / 700))
+                .opacity(1 - min(0.35, Double(abs(vm.musicDragOffset)) / 160))
+                .overlay(alignment: vm.musicDragOffset < 0 ? .bottom : .top) {
+                    sourceHint
+                }
                 // Marks the music box: a horizontal swipe over it skips tracks
                 // instead of switching tabs (handled centrally in ContentView).
                 .onHover { hovering in
@@ -474,6 +499,7 @@ struct NotchHomeView: View {
         .onDisappear {
             vm.isHoveringMusicPlayer = false
             vm.isHoveringCalendar = false
+            vm.musicDragOffset = 0
         }
     }
 }

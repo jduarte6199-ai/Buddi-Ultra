@@ -32,6 +32,9 @@ class BuddiViewModel: NSObject, ObservableObject {
     // True while the cursor is over the now-playing music box. A horizontal swipe
     // there skips tracks; anywhere else on the open panel it switches tabs.
     @Published var isHoveringMusicPlayer: Bool = false
+    /// Live vertical offset of the music card while a source swipe is in
+    /// progress (negative = up), so the card visibly follows the fingers.
+    @Published var musicDragOffset: CGFloat = 0
     // True while the cursor is over the shelf's horizontal file strip. That strip
     // owns horizontal swipes; anywhere else a swipe switches tabs.
     @Published var isHoveringShelfScroller: Bool = false

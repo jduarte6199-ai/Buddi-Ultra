@@ -151,11 +151,19 @@ class MusicManager: ObservableObject {
     /// YouTube Music). Triggered by a vertical swipe over the music box.
     /// Skips Now Playing when it is deprecated on this macOS version.
     func cycleMediaSource(forward: Bool) {
+        guard let target = adjacentMediaSource(forward: forward) else { return }
+        Defaults[.mediaController] = target
+        NotificationCenter.default.post(name: Notification.Name.mediaControllerChanged, object: nil)
+    }
+
+    /// The source a vertical swipe would switch to, without switching; drives
+    /// the "next source" hint shown while the card is being dragged.
+    func adjacentMediaSource(forward: Bool) -> MediaControllerType? {
         var types = MediaControllerType.allCases
         if isNowPlayingDeprecated {
             types.removeAll { $0 == .nowPlaying }
         }
-        guard !types.isEmpty else { return }
+        guard !types.isEmpty else { return nil }
         // Resolve the stored preference the same way activation does, so the
         // cycle starts from the controller actually in use.
         var current = Defaults[.mediaController]
@@ -164,8 +172,7 @@ class MusicManager: ObservableObject {
         }
         let index = types.firstIndex(of: current) ?? 0
         let step = forward ? 1 : -1
-        Defaults[.mediaController] = types[(index + step + types.count) % types.count]
-        NotificationCenter.default.post(name: Notification.Name.mediaControllerChanged, object: nil)
+        return types[(index + step + types.count) % types.count]
     }
 
     /// Effective type of the controller currently active; used to skip

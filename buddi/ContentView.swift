@@ -31,6 +31,9 @@ struct ContentView: View {
     @State private var haptics: Bool = false
     /// Upward drag of the session bubble; past the threshold it dismisses.
     @State private var bubbleDragOffset: CGFloat = 0
+    /// Whether the current music-card drag has passed the switch point (so
+    /// the threshold haptic fires once per crossing, not every event).
+    @State private var musicDragCrossed = false
 
     @Namespace var albumArtNamespace
 
@@ -670,12 +673,8 @@ struct ContentView: View {
         // Over the music box on the open panel, swipe down = previous media
         // source (mirror of the swipe-up handler: end of gesture, 30pt min).
         if vm.notchState == .open {
-            if coordinator.currentView == .home && vm.isHoveringMusicPlayer,
-               phase == .ended, translation >= 30 {
-                MusicManager.shared.cycleMediaSource(forward: false)
-                if Defaults[.enableHaptics] {
-                    haptics.toggle()
-                }
+            if coordinator.currentView == .home && vm.isHoveringMusicPlayer {
+                handleMusicSourceDrag(translation: translation, phase: phase, forward: false)
             }
             return
         }
@@ -702,6 +701,52 @@ struct ContentView: View {
         }
     }
 
+    /// Music card follows a vertical swipe with rubber-band resistance, ticks
+    /// a haptic when it passes the switch point, and on release either
+    /// springs back or plays a carousel exit/enter while the source changes.
+    private func handleMusicSourceDrag(translation: CGFloat, phase: NSEvent.Phase, forward: Bool) {
+        let threshold: CGFloat = 30
+        let direction: CGFloat = forward ? -1 : 1   // swipe up moves the card up
+        let hapticsOn = Defaults[.enableHaptics]
+
+        guard phase == .ended else {
+            // Resistance grows with distance, capped well inside the panel.
+            let travel = 44 * (1 - exp(-translation / 55))
+            vm.musicDragOffset = direction * travel
+            let crossed = translation >= threshold
+            if crossed != musicDragCrossed {
+                musicDragCrossed = crossed
+                if hapticsOn {
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .now)
+                }
+            }
+            return
+        }
+
+        let commit = musicDragCrossed || translation >= threshold
+        musicDragCrossed = false
+        guard commit else {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { vm.musicDragOffset = 0 }
+            return
+        }
+
+        MusicManager.shared.cycleMediaSource(forward: forward)
+        if hapticsOn {
+            NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
+        }
+        // Carousel: the card leaves in the swipe direction and the new
+        // source's card arrives from the opposite side.
+        withAnimation(.easeIn(duration: 0.12)) { vm.musicDragOffset = direction * 70 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            var jump = Transaction()
+            jump.disablesAnimations = true
+            withTransaction(jump) { vm.musicDragOffset = -direction * 70 }
+            DispatchQueue.main.async {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.75)) { vm.musicDragOffset = 0 }
+            }
+        }
+    }
+
     private func handleUpGesture(translation: CGFloat, phase: NSEvent.Phase) {
         guard vm.notchState == .open && !vm.isHoveringCalendar && !vm.isScrollGestureActive else { return }
 
@@ -711,12 +756,7 @@ struct ContentView: View {
         // at gesture end, and only past a real travel threshold so a 4pt
         // trackpad drift can't hop sources.
         if coordinator.currentView == .home && vm.isHoveringMusicPlayer {
-            if phase == .ended && translation >= 30 {
-                MusicManager.shared.cycleMediaSource(forward: true)
-                if Defaults[.enableHaptics] {
-                    haptics.toggle()
-                }
-            }
+            handleMusicSourceDrag(translation: translation, phase: phase, forward: true)
             return
         }
 

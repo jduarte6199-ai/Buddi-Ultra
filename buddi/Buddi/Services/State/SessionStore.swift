@@ -845,6 +845,28 @@ actor SessionStore {
         cancelPendingSync(sessionId: sessionId)
     }
 
+    /// Remove sessions whose Claude process is gone. Automated runs (agents,
+    /// workflows) often exit without a SessionEnd hook, which left them in
+    /// the list "processing" forever. A session with a pid is dead when the
+    /// process no longer exists; one without a pid is dead when it claims to
+    /// be working but has shown no activity for 15 minutes.
+    func reapDeadSessions() {
+        let now = Date()
+        let dead = sessions.values.filter { session in
+            if let pid = session.pid {
+                return kill(pid_t(pid), 0) != 0 && errno == ESRCH
+            }
+            return session.phase.isActive && now.timeIntervalSince(session.lastActivity) > 15 * 60
+        }
+        guard !dead.isEmpty else { return }
+        for session in dead {
+            Self.logger.debug("Reaping dead session \(session.sessionId, privacy: .public)")
+            sessions.removeValue(forKey: session.sessionId)
+            cancelPendingSync(sessionId: session.sessionId)
+        }
+        publishState()
+    }
+
     // MARK: - History Loading
 
     private func loadHistoryFromFile(sessionId: String, cwd: String) async {

@@ -77,8 +77,16 @@ final class BuddiSessionBridge: ObservableObject {
             .store(in: &cancellables)
     }
 
+    private var reaperTimer: Timer?
+
     func startMonitoring() {
         sessionMonitor.startMonitoring()
+        // Sweep out sessions whose process died without saying goodbye.
+        reaperTimer?.invalidate()
+        reaperTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
+            Task { await SessionStore.shared.reapDeadSessions() }
+        }
+        Task { await SessionStore.shared.reapDeadSessions() }
     }
 
     func stopMonitoring() {

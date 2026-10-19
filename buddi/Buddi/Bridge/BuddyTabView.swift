@@ -47,7 +47,21 @@ struct BuddyTabView: View {
     private var homeContent: some View {
         HStack(alignment: .top, spacing: 15) {
             VStack(spacing: 3) {
-                PixelCatParade(width: 100, catHeight: 32)
+                // Pixel cats when their sprites are bundled (kept out of the
+                // public repo); otherwise the original ASCII buddy.
+                if PixelCatSprites.cats.isEmpty {
+                    ASCIIFullSpriteView(
+                        animator: BuddyManager.shared.animator,
+                        identity: BuddyManager.shared.effectiveIdentity,
+                        fontSize: 8
+                    )
+                    Text(BuddyManager.shared.effectiveIdentity.name
+                         ?? BuddyManager.shared.effectiveIdentity.species.rawValue.capitalized)
+                        .font(.caption2.weight(.medium).monospaced())
+                        .foregroundColor(Color(nsColor: BuddyManager.shared.effectiveIdentity.rarity.nsColor).opacity(0.8))
+                } else {
+                    PixelCatParade(width: 100, catHeight: 32)
+                }
 
                 if usageService.isAvailable {
                     TimelineView(.periodic(from: .now, by: 60)) { context in

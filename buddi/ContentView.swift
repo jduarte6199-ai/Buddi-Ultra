@@ -883,13 +883,17 @@ extension ContentView {
             HStack(spacing: 2) {
                 // A pixel cat instead of the face glyph: walks in place while
                 // Claude works, sits while a session waits.
-                PixelCatMini(
-                    height: min(notchContentHeight * 0.85, 20),
-                    walking: isProcessing,
-                    alert: hasPending,
-                    celebrate: coordinator.sessionDonePopup.show
-                        && coordinator.sessionDonePopup.kind == .ready
-                )
+                if PixelCatSprites.cats.isEmpty {
+                    BuddyFaceIcon(fontSize: min(notchContentHeight * 0.4, 9))
+                } else {
+                    PixelCatMini(
+                        height: min(notchContentHeight * 0.85, 20),
+                        walking: isProcessing,
+                        alert: hasPending,
+                        celebrate: coordinator.sessionDonePopup.show
+                            && coordinator.sessionDonePopup.kind == .ready
+                    )
+                }
                 if hasPending {
                     PermissionIndicatorIcon(
                         size: min(notchContentHeight * 0.5, 12),

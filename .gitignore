@@ -67,3 +67,6 @@ CLAUDE.md
 *.pem
 *.key
 credentials/
+
+# Personal cat sprites: kept locally, never published
+buddi/Buddi/Resources/Pets/

@@ -12,11 +12,105 @@ struct ClaudeInstancesView: View {
     @ObservedObject var sessionMonitor: ClaudeSessionMonitor
     @ObservedObject var viewModel: BuddyPanelViewModel
 
+    /// "all", "reply" (needs my reply), or "project:<name>".
+    @AppStorage("chatListFilter") private var filter = "all"
+    @AppStorage("chatFolderTabsVisible") private var tabsVisible = true
+
     var body: some View {
         if sessionMonitor.instances.isEmpty {
             emptyState
         } else {
-            instancesList
+            VStack(spacing: 4) {
+                if tabsVisible {
+                    filterStrip
+                }
+                if visibleInstances.isEmpty {
+                    Text(filter == "reply" ? "Nothing waiting on you" : "No chats here")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    instancesList
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if !tabsVisible {
+                    Button {
+                        withAnimation(.smooth) { tabsVisible = true }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Show folder tabs and filters")
+                    .padding(.trailing, 6)
+                }
+            }
+        }
+    }
+
+    // MARK: - Filters and folder tabs
+
+    private func needsReply(_ session: SessionState) -> Bool {
+        session.phase.needsAttention
+    }
+
+    /// Project folders present, most chats first, then alphabetical.
+    private var projects: [(name: String, count: Int)] {
+        let counts = Dictionary(grouping: sessionMonitor.instances, by: \.projectName)
+            .mapValues(\.count)
+        return counts.map { ($0.key, $0.value) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
+    }
+
+    private var visibleInstances: [SessionState] {
+        switch filter {
+        case "all":
+            return sortedInstances
+        case "reply":
+            return sortedInstances.filter(needsReply)
+        default:
+            let project = String(filter.dropFirst("project:".count))
+            return sortedInstances.filter { $0.projectName == project }
+        }
+    }
+
+    private var filterStrip: some View {
+        let replyCount = sessionMonitor.instances.filter(needsReply).count
+        return HStack(spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    FilterChip(label: "All", count: sessionMonitor.instances.count,
+                               selected: filter == "all") { filter = "all" }
+                    FilterChip(label: "Needs reply", count: replyCount,
+                               selected: filter == "reply",
+                               glow: replyCount > 0 ? TerminalColors.green : nil) { filter = "reply" }
+                    ForEach(projects, id: \.name) { project in
+                        FilterChip(label: project.name, count: project.count,
+                                   selected: filter == "project:\(project.name)",
+                                   icon: "folder") { filter = "project:\(project.name)" }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            Button {
+                withAnimation(.smooth) { tabsVisible = false }
+            } label: {
+                Image(systemName: "chevron.up")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Hide folder tabs")
+        }
+        .padding(.horizontal, 6)
+        .onAppear {
+            // A remembered project tab whose chats are all gone falls back to All.
+            if filter.hasPrefix("project:"),
+               !projects.contains(where: { "project:\($0.name)" == filter }) {
+                filter = "all"
+            }
         }
     }
 
@@ -68,7 +162,7 @@ struct ClaudeInstancesView: View {
     private var instancesList: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(spacing: 2) {
-                ForEach(sortedInstances) { session in
+                ForEach(visibleInstances) { session in
                     InstanceRow(
                         session: session,
                         onFocus: { focusSession(session) },
@@ -108,6 +202,52 @@ struct ClaudeInstancesView: View {
     }
 }
 
+// MARK: - Filter Chip
+
+private struct FilterChip: View {
+    let label: String
+    let count: Int
+    let selected: Bool
+    var icon: String? = nil
+    /// When set, the chip glows in this color (e.g. chats waiting on you).
+    var glow: Color? = nil
+    let action: () -> Void
+
+    @State private var pulse = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if let icon {
+                    Image(systemName: icon).font(.system(size: 9))
+                }
+                if glow != nil {
+                    Circle()
+                        .fill(glow ?? .clear)
+                        .frame(width: 5, height: 5)
+                        .opacity(pulse ? 1 : 0.4)
+                }
+                Text(label).lineLimit(1)
+                Text("\(count)")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(selected ? .white : .secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(selected ? Color.white.opacity(0.16) : Color.white.opacity(0.05)))
+            .overlay(
+                Capsule().stroke((glow ?? .clear).opacity(pulse ? 0.7 : 0.25), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            guard glow != nil else { return }
+            withAnimation(.easeInOut(duration: 1.1).repeatForever()) { pulse = true }
+        }
+    }
+}
+
 // MARK: - Instance Row
 
 struct InstanceRow: View {
@@ -119,6 +259,7 @@ struct InstanceRow: View {
     let onReject: () -> Void
 
     @State private var isHovered = false
+    @State private var glowPulse = false
     @State private var spinnerPhase = 0
     @State private var isYabaiAvailable = false
 
@@ -135,6 +276,15 @@ struct InstanceRow: View {
     private var isInteractiveTool: Bool {
         guard let toolName = session.pendingToolName else { return false }
         return toolName == "AskUserQuestion"
+    }
+
+    /// Glow color for chats waiting on the user, nil otherwise.
+    private var glowColor: Color? {
+        switch session.phase {
+        case .waitingForApproval: return TerminalColors.amber
+        case .waitingForInput: return TerminalColors.green
+        default: return nil
+        }
     }
 
     /// Whether a jump-to-session route exists: yabai for multiplexer
@@ -266,10 +416,9 @@ struct InstanceRow: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else {
                 HStack(spacing: 8) {
-                    if canFocusSession {
-                        IconButton(icon: "eye") {
-                            onFocus()
-                        }
+                    // Row click jumps to VS Code; this previews in the notch.
+                    IconButton(icon: "bubble.left") {
+                        onChat()
                     }
 
                     // Archive button - only for idle or completed sessions
@@ -286,14 +435,30 @@ struct InstanceRow: View {
         .padding(.trailing, 14)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
+        // Click takes you to the chat itself in VS Code (window + exact
+        // session); without a route there, fall back to the notch preview.
         .onTapGesture {
-            onChat()
+            if canFocusSession { onFocus() } else { onChat() }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isWaitingForApproval)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(isHovered ? Color.gray.opacity(0.15) : Color.clear)
+                .fill(isHovered ? Color.gray.opacity(0.15) : glowColor.map { $0.opacity(0.06) } ?? .clear)
         )
+        // Chats waiting on you glow: green when Claude finished, amber when
+        // a tool needs approval.
+        .overlay {
+            if let glowColor {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(glowColor.opacity(glowPulse ? 0.75 : 0.25), lineWidth: 1.2)
+                    .shadow(color: glowColor.opacity(glowPulse ? 0.45 : 0.1), radius: 6)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever()) { glowPulse = true }
+        }
+        .help(canFocusSession ? "Open this chat in VS Code" : "Show this chat")
         .onHover { isHovered = $0 }
         .task {
             isYabaiAvailable = await WindowFinder.shared.isYabaiAvailable()

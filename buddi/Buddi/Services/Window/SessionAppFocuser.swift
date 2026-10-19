@@ -118,8 +118,51 @@ enum SessionAppFocuser {
                 } else {
                     app.activate(options: [.activateIgnoringOtherApps])
                 }
+
+                // Sessions started from the Claude Code extension can be
+                // opened exactly: its URI handler takes ?session=<id> and
+                // brings that chat up in the editor. Sent after the right
+                // window is raised so the window that receives it is the one
+                // with this project. Terminal sessions are skipped on purpose:
+                // opening those in the extension would resume them a second time.
+                if let url = exactSessionURL(for: session, hostBundleId: app.bundleIdentifier) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
             }
         }
+    }
+
+    /// `<scheme>://anthropic.claude-code/open?session=<id>` for extension
+    /// sessions in a VS Code-family editor, else nil.
+    private static func exactSessionURL(for session: SessionState, hostBundleId: String?) -> URL? {
+        let schemes: [String: String] = [
+            "com.microsoft.VSCode": "vscode",
+            "com.microsoft.VSCodeInsiders": "vscode-insiders",
+            "com.todesktop.230313mzl4w4u92": "cursor",
+            "com.exafunction.windsurf": "windsurf",
+            "com.vscodium": "vscodium",
+        ]
+        guard let bundleId = hostBundleId,
+              let scheme = schemes[bundleId],
+              let pid = session.pid,
+              isExtensionSession(pid: pid),
+              UUID(uuidString: session.sessionId) != nil
+        else { return nil }
+        return URL(string: "\(scheme)://anthropic.claude-code/open?session=\(session.sessionId)")
+    }
+
+    /// Claude Code records each live process in ~/.claude/sessions/<pid>.json
+    /// with its entrypoint; the extension's sessions say "claude-vscode".
+    private static func isExtensionSession(pid: Int) -> Bool {
+        let file = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/sessions/\(pid).json")
+        guard let data = try? Data(contentsOf: file),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let entrypoint = json["entrypoint"] as? String
+        else { return false }
+        return entrypoint.hasPrefix("claude-vscode")
     }
 
     /// Raise the host app window whose title mentions the project folder.

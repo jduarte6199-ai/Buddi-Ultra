@@ -119,6 +119,10 @@ enum PixelCatSprites {
 /// Everything needed to draw the cat at one instant.
 struct CatPose {
     var image: NSImage
+    /// The following sprite frame, faded in over the tail of each frame
+    /// interval so a 6-7 frame walk cycle reads smooth at display refresh.
+    var nextImage: NSImage? = nil
+    var blend: Double = 0
     var x: CGFloat = 0
     var y: CGFloat = 0            // negative = up
     var facingRight = true
@@ -126,6 +130,9 @@ struct CatPose {
     var scale: CGFloat = 1
     var rotation: Double = 0
     var overlay: CatOverlay = .none
+    /// Claude-spark "yarn ball" when playing: x in container points (left
+    /// edge of the ball), spin in degrees, and a 0...1 pop-in scale.
+    var ball: (x: CGFloat, spin: Double, scale: CGFloat)? = nil
 }
 
 enum CatOverlay: Equatable {
@@ -143,9 +150,17 @@ struct CatPoseView: View {
 
     var body: some View {
         let width = height * aspect
-        Image(nsImage: pose.image)
-            .resizable()
-            .interpolation(.none)
+        ZStack {
+            Image(nsImage: pose.image)
+                .resizable()
+                .interpolation(.none)
+            if let next = pose.nextImage, pose.blend > 0 {
+                Image(nsImage: next)
+                    .resizable()
+                    .interpolation(.none)
+                    .opacity(pose.blend)
+            }
+        }
             .frame(width: width, height: height)
             .scaleEffect(x: pose.facingRight ? 1 : -1, y: 1)
             .scaleEffect(x: 1, y: pose.scaleY, anchor: .bottom)
@@ -189,16 +204,25 @@ struct CatPoseView: View {
 // MARK: - Moves (shared by the panel routine and the notch cat)
 
 enum CatMoves {
-    static let walkFPS: Double = 9
-    static let runFPS: Double = 16
+    static let walkFPS: Double = 12
+    static let runFPS: Double = 20
 
-    static func walkFrame(_ cat: PixelCat, _ t: TimeInterval, fps: Double = walkFPS) -> NSImage {
-        cat.walk[Int(t * fps) % cat.walk.count]
+    /// Current walk frame plus the next one and how far to fade into it.
+    /// The fade only covers the last 45% of each frame, so most of the time
+    /// the cat is a single crisp pixel frame.
+    static func walkFrames(_ cat: PixelCat, _ t: TimeInterval, fps: Double = walkFPS)
+        -> (image: NSImage, next: NSImage, blend: Double) {
+        let position = t * fps
+        let index = Int(position) % cat.walk.count
+        let fraction = position - floor(position)
+        let blend = max(0, (fraction - 0.55) / 0.45)
+        return (cat.walk[index], cat.walk[(index + 1) % cat.walk.count], blend)
     }
 
-    /// Two-step vertical bob while walking, like the store's pet-bob.
-    static func stepBob(_ t: TimeInterval, height: CGFloat) -> CGFloat {
-        Int(t / 0.23) % 2 == 0 ? 0 : -height * 0.04
+    /// Continuous step bob, two bumps per walk cycle, like the store's pet-bob
+    /// but eased instead of stepped.
+    static func stepBob(_ t: TimeInterval, height: CGFloat, rate: Double = 2.4) -> CGFloat {
+        -height * 0.035 * CGFloat(abs(sin(Double.pi * t * rate)))
     }
 
     static func breathe(_ t: TimeInterval, speed: Double = 2.2) -> CGFloat {
@@ -208,6 +232,20 @@ enum CatMoves {
     /// Parabolic hop, 0...1 progress -> negative y.
     static func hop(_ u: Double, height: CGFloat) -> CGFloat {
         -height * CGFloat(sin(Double.pi * max(0, min(1, u))))
+    }
+
+    /// Ease in and out, so walks accelerate and settle instead of snapping.
+    static func smooth(_ u: Double) -> Double {
+        let x = max(0, min(1, u))
+        return x * x * (3 - 2 * x)
+    }
+
+    static func applyWalk(_ pose: inout CatPose, _ cat: PixelCat, _ t: TimeInterval,
+                          fps: Double = walkFPS) {
+        let frames = walkFrames(cat, t, fps: fps)
+        pose.image = frames.image
+        pose.nextImage = frames.next
+        pose.blend = frames.blend
     }
 }
 
@@ -221,12 +259,22 @@ struct PixelCatParade: View {
         if PixelCatSprites.cats.isEmpty {
             Color.clear.frame(width: width, height: catHeight)
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 24)) { context in
+            TimelineView(.animation) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
                 let cat = PixelCatSprites.cat(at: t)!
                 let pose = CatRoutine.pose(for: cat, at: t, width: width, height: catHeight)
                 VStack(spacing: 2) {
                     ZStack(alignment: .bottomLeading) {
+                        if let ball = pose.ball {
+                            let size = catHeight * 0.42
+                            ClaudeSpark()
+                                .fill(Color(red: 0.85, green: 0.47, blue: 0.34))
+                                .frame(width: size, height: size)
+                                .rotationEffect(.degrees(ball.spin))
+                                .shadow(color: Color(red: 0.85, green: 0.47, blue: 0.34).opacity(0.5), radius: 3)
+                                .scaleEffect(ball.scale, anchor: .bottom)
+                                .offset(x: ball.x)
+                        }
                         CatPoseView(pose: pose, height: catHeight, aspect: cat.aspect)
                     }
                     .frame(width: width, height: catHeight + 8, alignment: .bottomLeading)
@@ -255,6 +303,7 @@ enum CatRoutine {
         case peek
         case pounce(TimeInterval)
         case turnAround
+        case playYarn(TimeInterval)
 
         static let walkSpeed: CGFloat = 20
         static let runSpeed: CGFloat = 48
@@ -281,7 +330,7 @@ enum CatRoutine {
         let local = t - Double(turn) * PixelCatSprites.turnDuration
         let step = cachedSteps.last { $0.start <= local } ?? cachedSteps[0]
         let u = step.duration > 0 ? min(1, (local - step.start) / step.duration) : 1
-        return render(step, u: u, t: t, cat: cat, height: height)
+        return render(step, u: u, t: t, cat: cat, height: height, width: width)
     }
 
     // MARK: Planning
@@ -295,6 +344,7 @@ enum CatRoutine {
         case .jumpHeart: return 1.2
         case .peek: return 3.6
         case .turnAround: return 0.8
+        case .playYarn(let d): return d
         }
     }
 
@@ -340,14 +390,15 @@ enum CatRoutine {
         while clock < total - exitAllowance {
             let move: Move
             switch rng.nextUnit() {
-            case ..<0.18: move = .walk(to: randomX())
-            case ..<0.28: move = .run(to: randomX())
-            case ..<0.42: move = .sit(2 + rng.nextUnit() * 2)
-            case ..<0.52: move = .sleep(4 + rng.nextUnit() * 3)
-            case ..<0.62: move = .hop(count: 2 + Int(rng.nextUnit() * 2))
-            case ..<0.72: move = .jumpHeart
-            case ..<0.80: move = .peek
-            case ..<0.90: move = .pounce(1.8)
+            case ..<0.22: move = .playYarn(5 + rng.nextUnit() * 3)
+            case ..<0.36: move = .walk(to: randomX())
+            case ..<0.44: move = .run(to: randomX())
+            case ..<0.54: move = .sit(2 + rng.nextUnit() * 2)
+            case ..<0.63: move = .sleep(4 + rng.nextUnit() * 3)
+            case ..<0.71: move = .hop(count: 2 + Int(rng.nextUnit() * 2))
+            case ..<0.79: move = .jumpHeart
+            case ..<0.86: move = .peek
+            case ..<0.94: move = .pounce(1.8)
             default: move = .turnAround
             }
             if clock + duration(of: move, from: x) > total - exitAllowance { break }
@@ -366,19 +417,19 @@ enum CatRoutine {
     // MARK: Rendering
 
     private static func render(_ step: Step, u: Double, t: TimeInterval, cat: PixelCat,
-                               height: CGFloat) -> CatPose {
+                               height: CGFloat, width: CGFloat) -> CatPose {
         var pose = CatPose(image: cat.idle, x: step.fromX, facingRight: step.facingRight)
         let elapsed = u * step.duration
 
         switch step.move {
         case .walk(let to):
-            pose.x = step.fromX + (to - step.fromX) * CGFloat(u)
-            pose.image = CatMoves.walkFrame(cat, t)
+            pose.x = step.fromX + (to - step.fromX) * CGFloat(CatMoves.smooth(u))
+            CatMoves.applyWalk(&pose, cat, t)
             pose.y = CatMoves.stepBob(t, height: height)
         case .run(let to):
-            pose.x = step.fromX + (to - step.fromX) * CGFloat(u)
-            pose.image = CatMoves.walkFrame(cat, t, fps: CatMoves.runFPS)
-            pose.y = CatMoves.stepBob(t * 1.8, height: height)
+            pose.x = step.fromX + (to - step.fromX) * CGFloat(CatMoves.smooth(u))
+            CatMoves.applyWalk(&pose, cat, t, fps: CatMoves.runFPS)
+            pose.y = CatMoves.stepBob(t, height: height, rate: 4)
         case .sit:
             pose.scaleY = CatMoves.breathe(t)
         case .sleep:
@@ -398,9 +449,9 @@ enum CatRoutine {
             let hidden = height + 8
             let rise: CGFloat
             switch u {
-            case ..<0.2: rise = CGFloat(u / 0.2)
+            case ..<0.2: rise = CGFloat(CatMoves.smooth(u / 0.2))
             case ..<0.8: rise = 1
-            default: rise = CGFloat((1 - u) / 0.2)
+            default: rise = CGFloat(CatMoves.smooth((1 - u) / 0.2))
             }
             pose.y = hidden * (1 - rise)
             pose.facingRight = u < 0.5 ? step.facingRight : !step.facingRight
@@ -412,8 +463,81 @@ enum CatRoutine {
         case .turnAround:
             pose.facingRight = u < 0.5 ? step.facingRight : !step.facingRight
             pose.scaleY = CatMoves.breathe(t)
+        case .playYarn(let d):
+            renderYarn(&pose, step: step, u: u, t: t, duration: d, cat: cat,
+                       height: height, width: width)
         }
         return pose
+    }
+}
+
+extension CatRoutine {
+    /// The cat chases the Claude spark like a ball of yarn. The ball leads,
+    /// rolling and spinning; the cat follows a beat behind, turns to face its
+    /// chase, and pounces when the ball changes direction. Both swing on a
+    /// sin(pi u) envelope, so the cat ends exactly where it started and the
+    /// next move picks up without a jump.
+    fileprivate static func renderYarn(_ pose: inout CatPose, step: Step, u: Double,
+                                       t: TimeInterval, duration: TimeInterval,
+                                       cat: PixelCat, height: CGFloat, width: CGFloat) {
+        let catWidth = height * cat.aspect
+        let ballSize = height * 0.42
+        let cycles = max(2, (duration / 2.2).rounded())
+        let omega = 2 * Double.pi * cycles
+        let envelope = sin(Double.pi * u)
+        let amplitude = Double(min(26, max(10, (width - ballSize) / 2)))
+
+        let catCenter = step.fromX + catWidth / 2
+        let ballOffset = amplitude * envelope * sin(omega * u)
+        let catOffset = 0.7 * amplitude * envelope * sin(omega * u - 0.9)
+        // Velocity sign of the cat decides which way it faces.
+        let catVelocity = cos(omega * u - 0.9)
+
+        let ballX = min(max(0, catCenter + CGFloat(ballOffset) - ballSize / 2), width - ballSize)
+        pose.x = min(max(-catWidth * 0.2, catCenter + CGFloat(catOffset) - catWidth / 2),
+                     width - catWidth * 0.8)
+        pose.facingRight = catVelocity >= 0
+
+        // Pounce when the ball turns around (sin near its peaks).
+        let peak = abs(sin(omega * u))
+        if peak > 0.9 && envelope > 0.3 {
+            let hopPhase = (peak - 0.9) / 0.1
+            pose.y = CatMoves.hop(hopPhase, height: height * 0.18)
+            pose.image = cat.walk[min(2, cat.walk.count - 1)]
+            pose.nextImage = nil
+            pose.blend = 0
+        } else if envelope > 0.15 {
+            CatMoves.applyWalk(&pose, cat, t, fps: CatMoves.runFPS)
+            pose.y = CatMoves.stepBob(t, height: height, rate: 4)
+        } else {
+            pose.scaleY = CatMoves.breathe(t)
+        }
+
+        // Rolling: spin follows distance travelled over the ball's radius.
+        let spin = ballOffset / Double(ballSize / 2) * 180 / Double.pi
+        let pop = CGFloat(min(1, u * 8, (1 - u) * 8))
+        pose.ball = (x: ballX, spin: spin, scale: pop)
+    }
+}
+
+/// Claude's mark: an orange spark of rounded rays of uneven length. Drawn as
+/// a vector shape (not a font glyph) so it stays crisp at any size.
+struct ClaudeSpark: Shape {
+    private static let rays: [CGFloat] = [1.0, 0.78, 0.95, 0.72, 0.9, 0.8, 1.0, 0.74, 0.92, 0.7, 0.88, 0.82]
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        let rayWidth = radius * 0.26
+        var path = Path()
+        for (i, length) in Self.rays.enumerated() {
+            let angle = Double(i) / Double(Self.rays.count) * 2 * Double.pi
+            let ray = CGRect(x: -rayWidth / 2, y: -radius * length, width: rayWidth, height: radius * length)
+            let transform = CGAffineTransform(translationX: center.x, y: center.y)
+                .rotated(by: CGFloat(angle))
+            path.addPath(Path(roundedRect: ray, cornerRadius: rayWidth / 2), transform: transform)
+        }
+        return path
     }
 }
 
@@ -449,7 +573,7 @@ struct PixelCatMini: View {
         if PixelCatSprites.cats.isEmpty {
             Color.clear.frame(width: height, height: height)
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 20)) { context in
+            TimelineView(.animation) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
                 let cat = PixelCatSprites.cat(at: t)!
                 CatPoseView(pose: pose(cat, t), height: height, aspect: cat.aspect)
@@ -469,7 +593,7 @@ struct PixelCatMini: View {
             pose.y = CatMoves.hop(cycle, height: height * 0.1)
             pose.overlay = .alert
         } else if walking {
-            pose.image = CatMoves.walkFrame(cat, t)
+            CatMoves.applyWalk(&pose, cat, t)
             pose.y = CatMoves.stepBob(t, height: height)
         } else {
             pose.scaleY = CatMoves.breathe(t)
